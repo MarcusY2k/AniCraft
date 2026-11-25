@@ -288,6 +288,7 @@ fn settle(app: &mut App) {
         app.s.end_gesture();
     }
     app.drag = Drag::None;
+    app.lasso.clear();
     app.tl_drag = crate::timeline::TlDrag::None;
     app.tl_layer_drag = None;
     app.me_drag = None;

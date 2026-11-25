@@ -454,7 +454,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     None => CursorIcon::Default,
                 }
             }
-            Tool::Rect | Tool::Oval | Tool::Star | Tool::Line | Tool::Pen | Tool::Pencil | Tool::Brush | Tool::PaintBrush | Tool::Eraser | Tool::PaintBucket | Tool::InkBottle | Tool::Eyedropper | Tool::Bone | Tool::Bind | Tool::Warp => CursorIcon::Crosshair,
+            Tool::Lasso | Tool::Rect | Tool::Oval | Tool::Star | Tool::Line | Tool::Pen | Tool::Pencil | Tool::Brush | Tool::PaintBrush | Tool::Eraser | Tool::PaintBucket | Tool::InkBottle | Tool::Eyedropper | Tool::Bone | Tool::Bind | Tool::Warp => CursorIcon::Crosshair,
             Tool::Text => CursorIcon::Text,
             Tool::Zoom => {
                 if alt {
@@ -557,6 +557,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     }
                 }
                 Tool::Subselect => crate::pathtools::subselect_drag_start(app, press, shift, xf),
+                Tool::Lasso => {
+                    app.lasso = vec![to_v(sp)];
+                    Drag::Lasso
+                }
                 Tool::Bone => crate::bone_tool::drag_start(app, xf, press),
                 Tool::Bind => crate::bind_tool::drag_start(app, xf, press),
                 Tool::Warp => crate::warp_tool::drag_start(app, xf, press),
@@ -758,9 +762,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             (Drag::Brush, Some(c)) => crate::brushtool::sample(app, to_v(c), pressure, xf, now),
             (Drag::Eraser, Some(c)) => crate::brushtool::sample(app, to_v(c), None, xf, now),
             (Drag::Marquee { cur: m, .. }, Some(c)) => *m = c,
+            (Drag::Lasso, Some(c)) => {
+                let p = to_v(c);
+                if app.lasso.last().is_none_or(|l| l.distance(p) * zoom >= 1.0) && app.lasso.len() < 10_000 {
+                    app.lasso.push(p);
+                }
+            }
             (Drag::Shape { start, cur: m }, Some(c)) => *m = constrain(app.tool, *start, c, shift),
             _ => {}
         }
+    }
+
+    if app.drag == Drag::Lasso && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+        app.lasso.clear();
+        app.drag = Drag::None;
     }
 
     if resp.drag_stopped() {
@@ -790,6 +805,17 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 // The parts of raw fills and strokes under it, cut at its edges, and the objects
                 // wholly inside it (ADR 0041).
                 app.run("raw.select_rect", json!({"x0": start.x, "y0": start.y, "x1": cur.x, "y1": cur.y, "add": shift}));
+            }
+            Drag::Lasso => {
+                if let Some(c) = resp.interact_pointer_pos().map(to_stage) {
+                    let p = to_v(c);
+                    if app.lasso.last().is_none_or(|l| l.distance(p) * zoom >= 1.0) && app.lasso.len() < 10_000 {
+                        app.lasso.push(p);
+                    }
+                }
+                let pts = std::mem::take(&mut app.lasso);
+                let points: Vec<[f32; 2]> = pts.iter().map(|p| [p.x, p.y]).collect();
+                app.run("raw.select_area", json!({"points": points, "add": shift}));
             }
             Drag::Shape { start, cur } => create_shape(app, start, cur),
             Drag::Pan | Drag::None | Drag::CameraWheel { .. } => {}
@@ -867,6 +893,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 Tool::Select | Tool::Transform if !panning && hint_at(p).is_none() => {
                     app.bone_sel = None;
                     app.run("element.pick", json!({"x": sp.x, "y": sp.y, "add": shift}));
+                }
+                Tool::Lasso if !panning => {
+                    app.run("raw.select_area", json!({"points": [], "add": shift}));
                 }
                 Tool::Zoom => {
                     let z = if alt { app.view.zoom / 2.0 } else { app.view.zoom * 2.0 };
@@ -1217,7 +1246,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let enveloped = crate::shape_envelope::shown(app).is_some();
     // Selected raw fills and strokes (ADRs 0031, 0041) show an
     // Animate-style stipple overlay instead of a bounding box.
-    if app.tool == Tool::Select && !preview {
+    if matches!(app.tool, Tool::Select | Tool::Lasso) && !preview {
         let gap = dot_gap_points(ppp);
         let to_px = Affine::translate(origin.x, origin.y)
             .mul(&Affine::scale(zoom, zoom));
@@ -1338,7 +1367,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             // Transform shows the fill's handles (ADR 0074).
             continue;
         }
-        if app.tool == Tool::Select && raw.contains(&(layer, id)) {
+        if matches!(app.tool, Tool::Select | Tool::Lasso) && raw.contains(&(layer, id)) {
             continue; // dots above
         }
         if transforming && enveloped {
@@ -1418,6 +1447,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             let r = Rect::from_two_pos(to_screen(Vec2::new(start.x, start.y)), to_screen(Vec2::new(cur.x, cur.y)));
             painter.rect_filled(r, 0.0, T.selection.gamma_multiply(0.12));
             painter.rect_stroke(r, 0.0, sel_stroke, StrokeKind::Middle);
+        }
+        Drag::Lasso if app.lasso.len() >= 2 => {
+            let pts: Vec<Pos2> = app.lasso.iter().map(|p| to_screen(*p)).collect();
+            if let (Some(&first), Some(&last)) = (pts.first(), pts.last())
+                && pts.len() >= 3
+            {
+                painter.add(egui::Shape::dashed_line(&[last, first], Stroke::new(1.0, T.selection.gamma_multiply(0.65)), 4.0, 3.0));
+            }
+            painter.add(egui::Shape::line(pts, sel_stroke));
         }
         Drag::PointMarquee { start, cur } => {
             let r = Rect::from_two_pos(to_screen(Vec2::new(start.x, start.y)), to_screen(Vec2::new(cur.x, cur.y)));
@@ -5516,5 +5554,77 @@ mod pointer_tests {
         }
         // Two separate clicks stay two clicks: the fill alone.
         assert_eq!(double_click(0.7).s.selection.len(), 1);
+    }
+
+    #[test]
+    fn lasso_drag_selects_and_esc_cancels() {
+        let (mut app, ctx, at) = scene();
+        // scene() has a raw rectangle at (100..300, 100..220). Add two drawing objects: one
+        // wholly inside the loop, one outside/crossing.
+        app.run("draw.rect", json!({"x": 400, "y": 120, "w": 30, "h": 30, "fill": "#22aa44", "stroke": null, "object": true}));
+        let inner_obj = app.s.selection.ids().next().expect("inner object");
+        app.run("draw.rect", json!({"x": 460, "y": 120, "w": 80, "h": 80, "fill": "#aa2244", "stroke": null, "object": true}));
+        let outer_obj = app.s.selection.ids().next().expect("outer object");
+        app.run("edit.deselect", json!({}));
+
+        let mut t = 2.0;
+        let mut frame = |app: &mut App, mods: Modifiers, events: Vec<Event>| {
+            t += 0.05;
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 940.0))), time: Some(t), events: std::iter::once(Event::ModifiersChanged(mods)).chain(events).collect(), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| app.frame(ui));
+            out.textures_delta.clear();
+        };
+        // L shortcut picks the Lasso tool.
+        frame(&mut app, Modifiers::NONE, vec![Event::Key { key: Key::L, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }]);
+        assert_eq!(app.tool, Tool::Lasso);
+
+        // Drag a loop over the right half of the raw rect.
+        let drag_poly = |frame: &mut dyn FnMut(&mut App, Modifiers, Vec<Event>), app: &mut App, pts: &[(f32, f32)], shift: bool| {
+            let mods = if shift { Modifiers::SHIFT } else { Modifiers::NONE };
+            let btn = |pos: Pos2, pressed: bool| Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: mods };
+            let first = at(pts[0].0, pts[0].1);
+            frame(app, mods, vec![Event::PointerMoved(first)]);
+            frame(app, mods, vec![btn(first, true)]);
+            for &(x, y) in &pts[1..] {
+                frame(app, mods, vec![Event::PointerMoved(at(x, y))]);
+            }
+            let last = at(pts[pts.len() - 1].0, pts[pts.len() - 1].1);
+            frame(app, mods, vec![btn(last, false)]);
+            frame(app, Modifiers::NONE, Vec::new());
+        };
+
+        drag_poly(&mut frame, &mut app, &[(200.0, 80.0), (320.0, 80.0), (320.0, 240.0), (200.0, 240.0)], false);
+        assert!(!app.s.selection.is_empty(), "lasso selected cut raw parts");
+        assert!(app.s.visible_elements().len() > 7, "raw rectangle was cut by the lasso");
+        let after_first = app.s.selection.len();
+
+        // Shift-lasso around the inner object adds it without picking the outer one.
+        drag_poly(&mut frame, &mut app, &[(385.0, 105.0), (445.0, 105.0), (445.0, 165.0), (385.0, 165.0)], true);
+        assert!(app.s.selection.len() > after_first);
+        assert!(app.s.selection.has_id(inner_obj), "inner object added");
+        assert!(!app.s.selection.has_id(outer_obj), "outer object not picked");
+        let before_esc = app.s.selection.clone();
+
+        // Esc during a drag cancels it without changing the selection.
+        let p0 = at(10.0, 10.0);
+        frame(&mut app, Modifiers::NONE, vec![Event::PointerMoved(p0)]);
+        frame(&mut app, Modifiers::NONE, vec![button(p0, true)]);
+        frame(&mut app, Modifiers::NONE, vec![Event::PointerMoved(at(60.0, 10.0))]);
+        frame(&mut app, Modifiers::NONE, vec![Event::PointerMoved(at(60.0, 60.0))]);
+        assert_eq!(app.drag, Drag::Lasso);
+        frame(&mut app, Modifiers::NONE, vec![Event::Key { key: Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }]);
+        assert_eq!(app.drag, Drag::None);
+        assert!(app.lasso.is_empty());
+        frame(&mut app, Modifiers::NONE, vec![button(at(60.0, 60.0), false)]);
+        frame(&mut app, Modifiers::NONE, Vec::new());
+        assert_eq!(app.s.selection, before_esc, "cancelled lasso leaves selection untouched");
+
+        // A click without dragging on empty stage clears the selection.
+        let empty = at(20.0, 20.0);
+        frame(&mut app, Modifiers::NONE, vec![Event::PointerMoved(empty)]);
+        frame(&mut app, Modifiers::NONE, vec![button(empty, true)]);
+        frame(&mut app, Modifiers::NONE, vec![button(empty, false)]);
+        frame(&mut app, Modifiers::NONE, Vec::new());
+        assert!(app.s.selection.is_empty(), "click on empty stage clears selection");
     }
 }

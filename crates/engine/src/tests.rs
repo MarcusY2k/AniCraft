@@ -707,6 +707,12 @@ fn panic_hunt(only: &str) {
         json!({"x0": 10, "y0": 10, "x1": 45, "y1": 75, "add": true, "from": [1, 2, 3], "snap": 3}),
         json!({"x0": -1e7, "y0": 1e7, "x1": 1e7, "y1": -1e7, "add": false, "from": [45, 45], "snap": 0.2}),
         json!({"x0": 30, "y0": 30, "x1": 30, "y1": 30, "point_slop": -5, "ids": [u64::MAX], "points": "x"}),
+        // Lasso selection (`raw.select_area`, #515): empty, NaN, huge, degenerate, self-crossing and over-limit loops.
+        json!({"points": [], "add": false}),
+        json!({"points": [[0, 0], [f64::NAN, 10], [10, 10]], "add": true}),
+        json!({"points": [[-1e30, 0], [1e30, 1e30], [0, -1e30]], "add": false}),
+        json!({"points": [[0, 0], [100, 100], [100, 0], [0, 100]], "add": false}),
+        json!({"points": (0..10_005).map(|i| json!([i, i % 3])).collect::<Vec<_>>()}),
         // Subselection on raw shapes (ADR 0042): handles that aren't there or move too far,
         // anchors to move along that are hostile, connected sets of anything.
         json!({"id": 3, "cmd": 1, "slot": 2, "dx": 1e30, "dy": 0, "x": 30, "y": 30, "to_x": 31, "to_y": 30, "with": [[30, 30], [1e30, 0]]}),

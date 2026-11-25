@@ -944,7 +944,7 @@ impl Session {
         }
         let Some(p) = self.live_cut() else { return };
         let held = self.selection.ids().any(|s| p.inside.contains(&s));
-        let fresh_marquee = id == "raw.select_rect" && params.get("add").and_then(Value::as_bool) != Some(true);
+        let fresh_marquee = matches!(id, "raw.select_rect" | "raw.select_area") && params.get("add").and_then(Value::as_bool) != Some(true);
         if !held || fresh_marquee || id.starts_with("file.") || id == "edit.undo" || id == "edit.redo" {
             self.heal_cut();
         }

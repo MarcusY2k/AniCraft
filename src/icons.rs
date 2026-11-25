@@ -16,6 +16,7 @@ use std::sync::OnceLock;
 pub enum Icon {
     Select,
     Subselect,
+    Lasso,
     Transform,
     Pen,
     Pencil,
@@ -93,7 +94,8 @@ pub enum Icon {
 
 impl Icon {
     #[cfg(test)]
-    pub const ALL: [Icon; 75] = [
+    pub const ALL: [Icon; 76] = [
+        Icon::Lasso,
         Icon::PanelProperties,
         Icon::PanelSwatches,
         Icon::PanelLibrary,
@@ -183,6 +185,8 @@ impl Icon {
             Icon::Select => ("mouse-pointer-2", false),
             // A hollow arrowhead, mirrored to point like a cursor: the subselection arrow.
             Icon::Subselect => ("navigation", true),
+            // A rope loop with its knot and tail (AniCraft original, on Lucide's grid).
+            Icon::Lasso => ("anicraft-lasso", false),
             Icon::Transform => ("scaling", false),
             // A stroke swelling and tapering, with a width point across it (AniCraft original).
             Icon::Width => ("anicraft-width", false),
@@ -333,6 +337,7 @@ static FILES: &[(&str, &str)] = &[
     ("anicraft-distribute-h", include_str!("../assets/icons/anicraft-distribute-h.svg")),
     ("anicraft-distribute-v", include_str!("../assets/icons/anicraft-distribute-v.svg")),
     ("anicraft-mask", include_str!("../assets/icons/anicraft-mask.svg")),
+    ("anicraft-lasso", include_str!("../assets/icons/anicraft-lasso.svg")),
     ("anicraft-width", include_str!("../assets/icons/anicraft-width.svg")),
     ("anicraft-gradient-transform", include_str!("../assets/icons/anicraft-gradient-transform.svg")),
     ("anicraft-brush", include_str!("../assets/icons/anicraft-brush.svg")),

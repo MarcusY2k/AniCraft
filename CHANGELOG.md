@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+* **Lasso tool (L)** (#515, backlog P-018). Draw a freehand loop on the stage to cut out and
+  select the parts of merged fills and lines inside it and pick objects wholly inside it, across
+  every visible, unlocked layer (**Shift** adds, **Esc** cancels, a click on empty stage clears).
+  Headless: `raw.select_area {points, add?}` (even-odd rule for self-intersecting loops; ready
+  for a straight-edged Polygon mode to call the same command).
+
 * **Timeline and panel bugs from the tracker** (M8, backlog P-009 and P-010, ADR 0131).
   * **Several layers selected at once** (#512). **Ctrl**-click a layer's name to add it or take
     it out, **Shift**-click for every layer from the active one, or **Shift+Up** and

@@ -29,7 +29,7 @@ AniCraft is an independent, open-source project, and is not affiliated with or e
 | Area | Done (ours included) | Partial | Missing | Won't do |
 |---|---|---|---|---|
 | Workspace and panels | 23 | 5 | 4 | 2 |
-| Tools | 19 | 7 | 7 | 1 |
+| Tools | 20 | 7 | 6 | 1 |
 | Drawing model | 16 | 3 | 4 | 0 |
 | Colour | 8 | 1 | 2 | 2 |
 | Text | 8 | 5 | 5 | 2 |
@@ -49,7 +49,7 @@ AniCraft is an independent, open-source project, and is not affiliated with or e
 | Accessibility | 4 | 2 | 1 | 0 |
 | Preferences and shortcuts | 6 | 2 | 0 | 1 |
 | Automation | 4 | 2 | 1 | 1 |
-| **All** | **198** | **53** | **70** | **27** |
+| **All** | **199** | **53** | **69** | **27** |
 
 The counts are of the rows below, so they weigh a small feature like a large one. The backlog,
 not this table, says what matters most.
@@ -101,7 +101,7 @@ not this table, says what matters most.
 | Subselection | **done** | [ADR 0042](adr/0042-subselection-and-merging-everywhere.md), [ADR 0045](adr/0045-raw-points-and-raw-shapes-inside-symbols.md). |
 | Free Transform | **partial** | Scale, skew, rotate, the transformation point, a box that turns with the object ([ADR 0111](adr/0111-the-transformation-point-a-turning-box-and-layer-opacity.md)), Envelope ([ADR 0080](adr/0080-drawing-parity-leftovers.md)). Missing: Distort. Open bug: rotation on Windows and FreeBSD ([#479](https://github.com/storytold/anicraft/issues/479)), not reproduced on Windows 10 (P-005). |
 | Gradient Transform | **done** | Gradient and bitmap fills, Lock Fill. |
-| Lasso | **missing** | P-018 ([#515](https://github.com/storytold/anicraft/issues/515)). |
+| Lasso | **done** | Freehand loop selection ([#515](https://github.com/storytold/anicraft/issues/515)); cuts raw shapes and selects objects wholly inside. |
 | Polygon (lasso) | **missing** | P-018. |
 | Magic Wand | **missing** | P-018. |
 | Pen, with Add, Delete and Convert Anchor Point | **done** | [ADR 0115](adr/0115-pen-parity-and-keep-area-tweens.md). Add, delete and convert are gestures of the Pen and Subselection, not tools of their own. |

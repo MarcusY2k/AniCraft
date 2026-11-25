@@ -21,6 +21,7 @@ This page is generated from the editor's shortcut map, so it always matches the 
 |---|---|---|
 | Selection | V | V |
 | Subselection | A | A |
+| Lasso | L | L |
 | Free Transform | Q | Q |
 | Asset Warp | Shift+Q | ⇧Q |
 | Gradient Transform | F | F |

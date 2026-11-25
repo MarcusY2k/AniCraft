@@ -14,6 +14,7 @@ use std::path::PathBuf;
 pub enum Tool {
     Select,
     Subselect,
+    Lasso,
     Transform,
     /// Asset Warp (ADR 0079): pins on shapes and bitmaps that bend them.
     Warp,
@@ -71,12 +72,13 @@ impl GapSize {
 }
 
 impl Tool {
-    pub const ALL: [Tool; 24] = [Tool::Select, Tool::Subselect, Tool::Transform, Tool::Warp, Tool::GradientTransform, Tool::Width, Tool::Bone, Tool::Bind, Tool::Pen, Tool::Text, Tool::Pencil, Tool::Brush, Tool::PaintBrush, Tool::Eraser, Tool::Rect, Tool::Oval, Tool::Star, Tool::Line, Tool::PaintBucket, Tool::InkBottle, Tool::Eyedropper, Tool::Camera, Tool::Hand, Tool::Zoom];
+    pub const ALL: [Tool; 25] = [Tool::Select, Tool::Subselect, Tool::Lasso, Tool::Transform, Tool::Warp, Tool::GradientTransform, Tool::Width, Tool::Bone, Tool::Bind, Tool::Pen, Tool::Text, Tool::Pencil, Tool::Brush, Tool::PaintBrush, Tool::Eraser, Tool::Rect, Tool::Oval, Tool::Star, Tool::Line, Tool::PaintBucket, Tool::InkBottle, Tool::Eyedropper, Tool::Camera, Tool::Hand, Tool::Zoom];
 
     pub fn label(self) -> &'static str {
         match self {
             Tool::Select => tr_noop!("Selection"),
             Tool::Subselect => tr_noop!("Subselection"),
+            Tool::Lasso => tr_noop!("Lasso"),
             Tool::Transform => tr_noop!("Free Transform"),
             Tool::Warp => tr_noop!("Asset Warp"),
             Tool::GradientTransform => tr_noop!("Gradient Transform"),
@@ -106,6 +108,7 @@ impl Tool {
         match self {
             Tool::Select => Some("V"),
             Tool::Subselect => Some("A"),
+            Tool::Lasso => Some("L"),
             Tool::Transform => Some("Q"),
             Tool::Warp => Some("Shift+Q"),
             Tool::GradientTransform => Some("F"),
@@ -135,6 +138,7 @@ impl Tool {
         match self {
             Tool::Select => tr_noop!("Click to select, drag to move, drag on empty space to marquee-select. Shift adds to the selection."),
             Tool::Subselect => tr_noop!("Click a shape to show its points; on a merged drawing, the points of everything connected to it. Drag points or handles to reshape (a shared point moves every shape that has it; a smooth point's handles stay in line, Alt moves one alone); drag a line or fill to move everything connected. Shift adds to the point selection, drag on empty space to marquee points, arrow keys nudge them. Double-click an edge to add a point, Delete removes points, and right-click makes a point smooth or a corner. A motion path's points edit the same way (its ends stay), and so does the path of text on a path (the text follows)."),
+            Tool::Lasso => tr_noop!("Drag a freehand loop to select the parts of raw shapes inside it and objects wholly inside it. Shift adds to the selection, Esc cancels."),
             Tool::Pen => tr_noop!("Click to place corner points, drag to pull smooth handles (Alt moves one handle, Shift keeps 45° steps). Click the first point to close; Enter, Esc or a double-click finishes. Click the last point to make it a corner, drag from it for a new handle, Alt-drag it to draw its curve again; Backspace removes it. On a selected path: click a point to make it a corner and again to delete it, click the outline to add a point, click an open end to continue it. Ctrl-click a path to select it. Points snap to points and lines while Snap to Objects is on."),
             Tool::Text => tr_noop!("Click to type new text, or click text to edit it. Esc or a click elsewhere finishes. The options set the font, size and colour; double-click text with the Selection tool to edit it too."),
             Tool::Pencil => tr_noop!("Drag to draw freehand. The options bar sets Smooth, Straighten or Ink."),
@@ -218,6 +222,8 @@ pub enum Drag {
     /// pointer to the point. The points that move are `App::raw_points`.
     RawPoint { at: egui::Pos2, off: egui::Vec2 },
     Marquee { start: egui::Pos2, cur: egui::Pos2 },
+    /// Lasso tool (issue #515): freehand loop selection; stage-space points are in `App::lasso`.
+    Lasso,
     /// Edit Multiple Frames (ADR 0047): moving the selection on every keyframe it is on, the
     /// pointer at `last` last frame; or a marquee over them.
     MultiMove { last: egui::Pos2 },
@@ -447,6 +453,8 @@ pub struct App {
     pub pen: Option<pathtools::PenPath>,
     /// Pencil samples of the stroke in progress (stage space).
     pub pencil: Vec<anicraft_engine::geom::Vec2>,
+    /// Lasso loop points in progress (stage space).
+    pub lasso: Vec<anicraft_engine::geom::Vec2>,
     /// A Selection-tool point drag's points (`raw.move_point`'s `points`), and the raw shapes a
     /// bend or point drag changed (merged again when it ends; ADR 0041).
     pub raw_points: serde_json::Value,
@@ -848,6 +856,7 @@ impl App {
             rect_radius: 0.0,
             pen: None,
             pencil: Vec::new(),
+            lasso: Vec::new(),
             raw_points: serde_json::Value::Null,
             raw_touched: Vec::new(),
             raw_with: Vec::new(),
@@ -4869,6 +4878,12 @@ impl App {
             self.points.clear();
             self.raw_anchors.clear();
             self.raw_ends.clear();
+        }
+        if self.tool != Tool::Lasso && (self.drag == Drag::Lasso || !self.lasso.is_empty()) {
+            self.lasso.clear();
+            if self.drag == Drag::Lasso {
+                self.drag = Drag::None;
+            }
         }
         pathtools::upkeep(self);
         crate::motion_path::upkeep(self);
