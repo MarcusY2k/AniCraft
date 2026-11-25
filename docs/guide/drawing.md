@@ -70,8 +70,10 @@ Properties. The setting applies to the Rectangle, Oval, PolyStar, Line, Pen, Pen
 tools.
 
 The Eraser only erases merged drawing. Drawing objects, symbols and text are left alone by
-it. To turn a drawing object back into merged drawing, select it and choose **Modify › Break
-Apart** (**Ctrl+B**): it merges with the merged shapes it touches.
+it. To turn merged shapes into a drawing object, select them and click **Create Object** in
+Properties (or choose **Modify › Combine Objects › Create Object**). To turn a drawing object
+back into merged drawing, select it and choose **Modify › Break Apart** (**Ctrl+B**): it
+merges with the merged shapes it touches.
 
 To change a drawing object's shape, **double-click** it (or select it and press **Ctrl+E**).
 It opens in place, as a group does (see [Grouping](#grouping)): the rest of the stage dims, and
@@ -567,6 +569,9 @@ topmost shape is the one on top in the stacking order.
 * **Punch** cuts the top shape's area out of the shapes under it, and removes the top shape.
 * **Crop** keeps only the parts of the shapes under it that are inside the top shape, and
   removes the top shape.
+* **Create Object** turns one or more selected merged shapes on the active layer into a drawing
+  object (or a group of the merged pieces when they have several colours or keep lines). With
+  raw shapes selected, **Create Object** also appears in **Properties**.
 
 The top shape cuts with its fill, so it needs one. Break symbols, text and groups apart first
 (**Ctrl+B**).

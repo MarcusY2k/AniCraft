@@ -137,10 +137,10 @@ not this table, says what matters most.
 | Feature | Status | Notes |
 |---|---|---|
 | Merge drawing: raw strokes and fills that cut and join | **done** | [ADR 0031](adr/0031-merge-drawing.md), [ADR 0041](adr/0041-selection-tool-on-raw-drawings.md), [ADR 0042](adr/0042-subselection-and-merging-everywhere.md), [ADR 0045](adr/0045-raw-points-and-raw-shapes-inside-symbols.md); [drawing](guide/drawing.md). Open bug: a hairline between merged curved fills ([#182](https://github.com/storytold/anicraft/issues/182), P-013). |
-| Object drawing | **done** | Edit inside by double-click. Editing without opening is missing ([#181](https://github.com/storytold/anicraft/issues/181)). |
+| Object drawing | **done** | Edit inside by double-click; **Create Object** in Properties or Modify › Combine Objects turns raw shapes into a drawing object ([#614](https://github.com/storytold/anicraft/issues/614)). Editing without opening is missing ([#181](https://github.com/storytold/anicraft/issues/181)). |
 | Groups, nested, edited in place | **done** | [ADR 0073](adr/0073-groups-combine-objects-and-selection-modifiers.md). |
 | Break Apart | **done** | |
-| Combine Objects: Union, Intersect, Punch, Crop | **done** | [ADR 0073](adr/0073-groups-combine-objects-and-selection-modifiers.md). One layer at a time. |
+| Combine Objects: Union, Intersect, Punch, Crop | **done** | [ADR 0073](adr/0073-groups-combine-objects-and-selection-modifiers.md), plus **Create Object** for raw shapes ([#614](https://github.com/storytold/anicraft/issues/614)). One layer at a time. |
 | Arrange (front, back, forward, backward) | **done** | |
 | Align, distribute | **done** | |
 | Match Size, Space evenly | **missing** | P-017. |

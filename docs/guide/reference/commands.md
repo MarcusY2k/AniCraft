@@ -1,6 +1,6 @@
 # Command reference
 
-Everything you can do in AniCraft is a command: the menus, the shortcuts, the command palette (**Ctrl+K**, macOS **⌘K**), `anicraft-cli` and AI assistants over MCP all run the same 399 commands, listed here by menu. The id is what scripts and [working headless](../working-headless.md) use; the parameters are what a command takes as JSON. Commands that change the document are one undo step each. Your own shortcuts (**Help › Keyboard Shortcuts**) replace the defaults shown here; see the [shortcut reference](shortcuts.md).
+Everything you can do in AniCraft is a command: the menus, the shortcuts, the command palette (**Ctrl+K**, macOS **⌘K**), `anicraft-cli` and AI assistants over MCP all run the same 400 commands, listed here by menu. The id is what scripts and [working headless](../working-headless.md) use; the parameters are what a command takes as JSON. Commands that change the document are one undo step each. Your own shortcuts (**Help › Keyboard Shortcuts**) replace the defaults shown here; see the [shortcut reference](shortcuts.md).
 
 This page is generated from the command registry, so it always matches the version of AniCraft it came with.
 
@@ -222,6 +222,8 @@ This page is generated from the command registry, so it always matches the versi
   Parameters: `{} combine with op punch`
 - **Crop** `modify.crop` · Modify › Combine Objects · changes the document
   Parameters: `{} combine with op crop`
+- **Create Object** `modify.create_object` · Modify › Combine Objects · changes the document
+  Parameters: `{} turns the selected raw shapes on the active layer into a drawing object (a group of the merged pieces when they have more than one colour or keep lines) → {created}`
 - **Rotate 90° CW** `modify.rotate_cw` · Modify › Transform · **Ctrl+Shift+9** (macOS **⇧⌘9**) · changes the document
   Parameters: `{origin?: selection|registration|center (default: the mode set with modify.transform_origin; selection unless changed)} about the centre of the whole selection, or each selected object about its own point`
 - **Rotate 90° CCW** `modify.rotate_ccw` · Modify › Transform · **Ctrl+Shift+7** (macOS **⇧⌘7**) · changes the document

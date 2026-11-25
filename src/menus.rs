@@ -465,6 +465,7 @@ fn enabled(app: &App, id: &str) -> bool {
         "modify.group" => !app.s.selection.is_empty(),
         "modify.ungroup" => app.s.selected_elements().iter().any(|(_, e)| matches!(e.kind, anicraft_engine::doc::ElementKind::Group { .. })),
         "modify.union" | "modify.intersect" | "modify.punch" | "modify.crop" => app.s.selected_elements().iter().filter(|(_, e)| matches!(e.kind, anicraft_engine::doc::ElementKind::Shape(_))).count() >= 2,
+        "modify.create_object" => selected_shape(app, |sh| sh.merge),
         "scene.prev" | "scene.move_up" => app.s.scene > 0,
         "view.guides_clear" => !app.s.guides().is_empty(),
         "scene.next" | "scene.move_down" => app.s.scene + 1 < app.s.doc.scenes.len(),

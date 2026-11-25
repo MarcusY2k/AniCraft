@@ -328,6 +328,102 @@ fn combine_refuses_what_it_cannot_combine() {
 }
 
 #[test]
+fn create_object_turns_one_raw_shape_into_a_drawing_object_and_undoes() {
+    let mut s = Session::new(anicraft_doc::Document::default());
+    run(&mut s, "draw.object_drawing", json!({"on": false}));
+    run(&mut s, "draw.rect", json!({"x": 20, "y": 30, "w": 100, "h": 60, "fill": "#ff0000", "stroke": null}));
+    run(&mut s, "edit.select_all", json!({}));
+    assert!(matches!(&top(&s)[0].kind, ElementKind::Shape(sh) if sh.merge), "starts as raw");
+    let before_bounds = s.selection_bounds();
+    let before_pic = picture(&s);
+    let v = run(&mut s, "modify.create_object", json!({}));
+    let created: Vec<u64> = v["created"].as_array().into_iter().flatten().filter_map(Value::as_u64).collect();
+    assert_eq!(created.len(), 1, "{v}");
+    let els = top(&s);
+    assert_eq!(els.len(), 1);
+    assert!(matches!(&els[0].kind, ElementKind::Shape(sh) if !sh.merge), "became a drawing object");
+    assert_eq!(s.selection.id_list(), created, "new drawing object stays selected");
+    let after_bounds = s.selection_bounds();
+    assert!(after_bounds.min.distance(before_bounds.min) < 1e-3 && after_bounds.max.distance(before_bounds.max) < 1e-3, "bounds {after_bounds:?} vs {before_bounds:?}");
+    assert_eq!(picture(&s), before_pic, "look unchanged");
+    // Undo restores the raw shape.
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(top(&s).len(), 1);
+    assert!(matches!(&top(&s)[0].kind, ElementKind::Shape(sh) if sh.merge), "undo restores raw");
+    // Partial raw selection cut out by a marquee becomes a drawing object, and undo heals the cut.
+    run(&mut s, "raw.select_rect", json!({"x0": 70, "y0": 0, "x1": 150, "y1": 120}));
+    let total_before: f64 = areas(&s).into_iter().sum();
+    let v = run(&mut s, "modify.create_object", json!({}));
+    let cut_id = v["created"][0].as_u64().unwrap_or(0);
+    assert_eq!(s.selection.id_list(), vec![cut_id]);
+    let els = top(&s);
+    assert_eq!(els.len(), 2);
+    assert!(els.iter().any(|e| e.id.0 == cut_id && matches!(&e.kind, ElementKind::Shape(sh) if !sh.merge)), "marquee part became drawing object");
+    assert!(els.iter().any(|e| e.id.0 != cut_id && matches!(&e.kind, ElementKind::Shape(sh) if sh.merge)), "rest stays raw");
+    let total_after: f64 = areas(&s).into_iter().sum();
+    assert!((total_after - total_before).abs() < 1.0, "{total_after} vs {total_before}");
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(top(&s).len(), 1, "undo heals the marquee cut in one step");
+    assert!(matches!(&top(&s)[0].kind, ElementKind::Shape(sh) if sh.merge));
+}
+
+#[test]
+fn create_object_combines_two_separate_raw_shapes() {
+    // Two separate raw shapes of the same fill become one drawing object.
+    let mut s = Session::new(anicraft_doc::Document::default());
+    run(&mut s, "draw.object_drawing", json!({"on": false}));
+    run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 60, "h": 60, "fill": "#ff0000", "stroke": null}));
+    run(&mut s, "draw.rect", json!({"x": 120, "y": 0, "w": 60, "h": 60, "fill": "#ff0000", "stroke": null}));
+    run(&mut s, "edit.select_all", json!({}));
+    assert_eq!(top(&s).len(), 2);
+    let before_bounds = s.selection_bounds();
+    let before_area: f64 = areas(&s).into_iter().sum();
+    let v = run(&mut s, "modify.create_object", json!({}));
+    let created: Vec<u64> = v["created"].as_array().into_iter().flatten().filter_map(Value::as_u64).collect();
+    assert_eq!(created.len(), 1, "{v}");
+    let els = top(&s);
+    assert_eq!(els.len(), 1);
+    assert!(matches!(&els[0].kind, ElementKind::Shape(sh) if !sh.merge), "one drawing object");
+    assert_eq!(s.selection.id_list(), created);
+    let after_bounds = s.selection_bounds();
+    assert!(after_bounds.min.distance(before_bounds.min) < 1e-3 && after_bounds.max.distance(before_bounds.max) < 1e-3);
+    assert!((areas(&s).into_iter().sum::<f64>() - before_area).abs() < 1.0);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(top(&s).len(), 2);
+    // Two separate raw shapes of different fills become a group per Union's rule.
+    let mut s = Session::new(anicraft_doc::Document::default());
+    run(&mut s, "draw.object_drawing", json!({"on": false}));
+    run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 60, "h": 60, "fill": "#ff0000", "stroke": null}));
+    run(&mut s, "draw.rect", json!({"x": 120, "y": 0, "w": 60, "h": 60, "fill": "#0000ff", "stroke": null}));
+    run(&mut s, "edit.select_all", json!({}));
+    let before_area: f64 = areas(&s).into_iter().sum();
+    let v = run(&mut s, "modify.create_object", json!({}));
+    let created: Vec<u64> = v["created"].as_array().into_iter().flatten().filter_map(Value::as_u64).collect();
+    assert_eq!(created.len(), 1, "{v}");
+    assert_eq!(top(&s).len(), 1);
+    assert!(matches!(top(&s)[0].kind, ElementKind::Group { .. }), "multi-colour union becomes a group");
+    assert_eq!(s.selection.id_list(), created);
+    assert!((areas(&s).into_iter().sum::<f64>() - before_area).abs() < 1.0);
+}
+
+#[test]
+fn create_object_refuses_drawing_objects_and_non_shapes() {
+    let mut s = Session::new(anicraft_doc::Document::default());
+    run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 80, "h": 80, "fill": "#ff0000", "object": true}));
+    run(&mut s, "edit.select_all", json!({}));
+    let before = s.doc.clone();
+    assert!(matches!(s.execute("modify.create_object", &json!({})), Err(crate::EngineError::State(_))), "only a drawing object selected");
+    assert_eq!(s.doc, before, "document unchanged on refusal");
+    // A symbol in the selection is refused like Combine Objects.
+    run(&mut s, "modify.convert_to_symbol", json!({"name": "Sym"}));
+    run(&mut s, "draw.rect", json!({"x": 100, "y": 0, "w": 50, "h": 50, "fill": "#00ff00", "object": false}));
+    run(&mut s, "edit.select_all", json!({}));
+    let before = s.doc.clone();
+    assert!(matches!(s.execute("modify.create_object", &json!({})), Err(crate::EngineError::State(_))), "symbol in selection");
+    assert_eq!(s.doc, before, "document unchanged on symbol refusal");
+}
+
+#[test]
 fn ctrl_drag_pulls_a_sharp_corner_out_of_a_line() {
     // What the Selection tool's Ctrl-drag runs (issue #200): a point where the edge was grabbed,
     // then that point moved, in one gesture.

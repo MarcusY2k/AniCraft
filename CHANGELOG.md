@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+* **Create Object in Properties** (#614). With raw (merge-drawing) shapes selected, Properties
+  now shows a **Create Object** button (also **Modify › Combine Objects › Create Object**,
+  `modify.create_object`) that turns one or more selected raw shapes on the active layer—including
+  a partial marquee selection—into a drawing object in one undo step (or a group of the merged
+  pieces when they have several colours or keep lines, as Union does).
 * **Timeline and panel bugs from the tracker** (M8, backlog P-009 and P-010, ADR 0131).
   * **Several layers selected at once** (#512). **Ctrl**-click a layer's name to add it or take
     it out, **Shift**-click for every layer from the active one, or **Shift+Up** and
