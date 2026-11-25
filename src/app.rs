@@ -3898,13 +3898,17 @@ impl App {
         }
         // Pasted raw artwork floats, selected, until it is deselected (as in Animate), so it
         // can be dragged off what it landed on before the two join (#391).
-        // Modify › Shape › Expand Fill and Soften Fill Edges ask for a distance (ADR 0109).
+        // Modify › Shape › Expand Fill, Soften Fill Edges and Optimize Curves ask for their settings.
         if id == "modify.expand_fill" {
             crate::shape_dialogs::open(self, crate::shape_dialogs::Kind::Expand);
             return;
         }
         if id == "modify.soften_fill_edges" {
             crate::shape_dialogs::open(self, crate::shape_dialogs::Kind::Soften);
+            return;
+        }
+        if id == "modify.optimize" {
+            crate::shape_dialogs::open(self, crate::shape_dialogs::Kind::Optimize);
             return;
         }
         // Modify › Document Settings asks for the stage's size, frame rate and colour (#505;

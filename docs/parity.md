@@ -148,7 +148,7 @@ not this table, says what matters most.
 | Envelope | **done** | [ADR 0080](adr/0080-drawing-parity-leftovers.md). Shapes and drawing objects only. |
 | Distort | **missing** | P-020. |
 | Modify › Shape: Convert Lines to Fills, Expand Fill, Soften Fill Edges | **done** | [ADR 0109](adr/0109-shape-commands-picker-eyedropper-and-transformation-origins.md). |
-| Modify › Shape: Smooth, Straighten, Advanced Smooth, Optimize | **missing** | P-020 ([#510](https://github.com/storytold/anicraft/issues/510)). |
+| Modify › Shape: Smooth, Straighten, Advanced Smooth, Optimize | **partial** | Smooth, Straighten and Optimize Curves ([#510](https://github.com/storytold/anicraft/issues/510)). Missing: Advanced Smooth (P-020). |
 | Stroke styles: solid, dashed, dotted; caps, joins, miter | **done** | [ADR 0046](adr/0046-stroke-caps-joins-and-dashes.md). |
 | Stroke styles: ragged, stipple, hatched | **missing** in authoring | They import from Animate files as solid lines and the report says so† (P-032). |
 | Stroke scale modes and hairlines | **partial** | Hairlines are drawn in outline view only. Missing: Normal, Horizontal, Vertical, None scaling and the hairline style (P-032). |
