@@ -614,7 +614,7 @@ These commands have no menu item: the panels, the stage and the timeline use the
 - **Delete Anchor Points** `path.delete_points` · changes the document
   Parameters: `{id, cmds: [..]}`
 - **Convert Anchor Point** `path.convert_point` · changes the document
-  Parameters: `{id, cmd, smooth: bool}`
+  Parameters: `{id, cmd, smooth: bool, handle?: [dx, dy]} (with smooth and handle, sets mirrored handles at anchor + (dx, dy) after and anchor - (dx, dy) before; zero handle makes no change)`
 - **Continue Path** `path.extend` · changes the document
   Parameters: `{id, d: SVG path data (stage space) of the new piece, drawn away from the end it continues, end?: "end" | "start" (default end), close?: bool}: continues an open path (one subpath, not closed) from one of its ends, as the Pen does (ADR 0115). The piece joins the path's own end point (its M is where the pen started and isn't kept); with close the path is closed after it`
 - **Bend Segment** `path.bend_segment` · changes the document
@@ -640,7 +640,7 @@ These commands have no menu item: the panels, the stage and the timeline use the
 - **Delete Anchor Points** `raw.delete_points` · changes the document
   Parameters: `{points: [[x, y], ..]} deletes the raw anchors at those positions (as raw.points lists them): every shape that has one is joined across it, so the drawing stays connected; a free end shortens its line; a shape left with nothing is removed; a point where three or more edges meet is kept`
 - **Convert Anchor Points** `raw.convert_points` · changes the document
-  Parameters: `{points: [[x, y], ..], smooth: bool} makes the raw anchors at those positions smooth (their handles in one line) or corners (handles drawn in), in every shape that has them`
+  Parameters: `{points: [[x, y], ..], smooth: bool, handle?: [dx, dy], merge?: bool} makes the raw anchors at those positions smooth (their handles in one line; with handle, mirrored at anchor ± (dx, dy)) or corners (handles drawn in), in every shape that has them, and merges again (unless merge is false)`
 - **Snap Point** `draw.snap`
   Parameters: ``{x, y, snap, moving?: bool} where a point drawn at (x, y) snaps within `snap` stage units, by the snap engine's priority (ADR 0076): an anchor (Snap to Objects), a guide (Snap to Guides), a line or fill edge, the grid (Snap to Grid), a whole pixel (Snap to Pixels); `moving`: the selection is what moves (a Free Transform handle), so it isn't a target; returns {x, y, snapped: {x, y, to: point|guide|line|grid|pixel} | null}``
 - **Replace** `find.replace` · changes the document

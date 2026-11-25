@@ -218,6 +218,53 @@ fn make_corner_and_make_smooth_on_raw_anchors() {
 }
 
 #[test]
+fn convert_points_with_handle_curves_shared_raw_edges_and_undoes() {
+    let mut s = raw_session();
+    run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 100, "h": 80, "fill": "#ff0000", "stroke": "#000000"}));
+    let corner = Vec2::new(100.0, 0.0);
+    // Zero vector makes no change.
+    let z = run(&mut s, "raw.convert_points", json!({"points": [[corner.x, corner.y]], "smooth": true, "handle": [0, 0]}));
+    assert_eq!(z["converted"], json!(0), "{z}");
+    assert!(handles_at(&s, corner).is_empty(), "still a straight corner");
+    // Bad handle input is rejected.
+    for bad in [json!("bad"), json!([1]), json!([1, null]), json!([1e9, 0])] {
+        assert!(s.execute("raw.convert_points", &json!({"points": [[corner.x, corner.y]], "smooth": true, "handle": bad})).is_err(), "{bad}");
+    }
+    let drag = Vec2::new(25.0, 15.0);
+    let v = run(&mut s, "raw.convert_points", json!({"points": [[corner.x, corner.y]], "smooth": true, "handle": [drag.x, drag.y]}));
+    assert_eq!(v["converted"], json!(1), "{v}");
+    assert_eq!(v["merged"], json!(true), "{v}");
+    assert!(has(&anchors(&s), (corner.x, corner.y)), "the anchor did not move");
+    let hs = handles_at(&s, corner);
+    assert_eq!(hs.len(), 2, "two handles at the corner: {hs:?}");
+    assert!(rawgeom::smooth_at(corner, hs[0].at, hs[1].at), "{hs:?}");
+    assert!(hs.iter().any(|h| h.at.distance(corner + drag) < 0.3), "handle on drag side: {hs:?}");
+    assert!(hs.iter().any(|h| h.at.distance(corner - drag) < 0.3), "mirrored opposite handle: {hs:?}");
+    // Every raw stroke sharing those edges matches the fill's curved edge.
+    let fill = raw(&s).into_iter().find(|e| is_fill(e)).unwrap_or_else(|| panic!("a fill"));
+    let ElementKind::Shape(fs) = &fill.kind else { panic!() };
+    for e in raw(&s).iter().filter(|e| !is_fill(e)) {
+        let ElementKind::Shape(sh) = &e.kind else { continue };
+        for pl in sh.path.flatten(&e.transform, 0.05) {
+            for p in pl.points {
+                assert!(fs.path.distance_to_edge(p, &fill.transform) < 0.3, "{p:?} off the fill's edge");
+            }
+        }
+    }
+    // Undo restores the straight rectangle.
+    run(&mut s, "edit.undo", json!({}));
+    assert!(handles_at(&s, corner).is_empty(), "undo removed the handles");
+    // Open raw line end gets one handle along the drag vector.
+    run(&mut s, "draw.line", json!({"x0": 200, "y0": 0, "x1": 300, "y1": 0, "stroke": "#000000"}));
+    let end = Vec2::new(200.0, 0.0);
+    let v = run(&mut s, "raw.convert_points", json!({"points": [[end.x, end.y]], "smooth": true, "handle": [20, 30]}));
+    assert_eq!(v["converted"], json!(1), "{v}");
+    let hs = handles_at(&s, end);
+    assert_eq!(hs.len(), 1, "{hs:?}");
+    assert!(hs[0].at.distance(end + Vec2::new(20.0, 30.0)) < 0.3, "{hs:?}");
+}
+
+#[test]
 fn drawing_snaps_to_anchors_then_lines_while_snap_to_objects_is_on() {
     let mut s = raw_session();
     run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 100, "h": 80, "fill": "#ff0000", "stroke": "#000000"}));

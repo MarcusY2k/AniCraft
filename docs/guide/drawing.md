@@ -207,6 +207,9 @@ The **Subselection** tool (**A**) shows and edits the points of a shape:
 * **Drag** a point to move it with the other selected points, and every shape sharing it.
 * **Drag a handle** to change the curve. A smooth point keeps its two handles in line, and
   **Alt** moves one alone.
+* **Alt-drag a point** to pull out mirrored curve handles, turning a corner into a smooth
+  curve (**Shift** snaps to 45° steps). An **Alt**-click without moving leaves the point as it
+  is.
 * **Double-click** an edge to add a point. The curve keeps its shape.
 * **Delete** removes the selected points, joining the shape across them. A point where three
   or more lines meet stays, and the status bar says why.
