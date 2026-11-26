@@ -11,11 +11,11 @@ use crate::cmds_draw::MAX_EXTENT;
 use crate::merge::{self, Part, mergeable, reach};
 use crate::params::*;
 use crate::{CommandSpec, CutOrigin, EngineError, Result, Session};
-use anicraft_doc::{Element, ElementId, ElementKind, LayerId};
+use anicraft_doc::{Element, ElementId, ElementKind, LayerId, Shape};
 use anicraft_geom::planar::SNAP;
 use anicraft_geom::raw::{self as rawgeom, Cubic};
 use anicraft_geom::walk::cubic_point;
-use anicraft_geom::{Path, PathCmd, Rect, Vec2};
+use anicraft_geom::{Affine, Path, PathCmd, Rect, Vec2, segment_distance};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -893,6 +893,39 @@ fn poly_contains_rect(pts: &[Vec2], loop_bounds: &Rect, r: &Rect) -> bool {
     }
 }
 
+/// Whether raw shape `sh` (in stage space via `m`, with stage `bounds`) actually overlaps the
+/// closed polygon `pts` (even-odd): a flattened outline point inside or on `pts`, an outline
+/// segment crossing or touching an edge of `pts`, or (for a fill) `pts` lying inside the shape.
+fn shape_overlaps_poly(sh: &Shape, m: &Affine, bounds: &Rect, pts: &[Vec2]) -> bool {
+    let n = pts.len();
+    let padded = bounds.inflate(1e-4);
+    let poly_edges: Vec<(Vec2, Vec2)> = (0..n)
+        .map(|i| (pts[i], pts[(i + 1) % n]))
+        .filter(|&(c, d)| !Rect::from_points(c, d).inflate(1e-4).intersect(&padded).is_empty())
+        .collect();
+    let closed_default = sh.fill.is_some();
+    for pl in sh.path.flatten(m, 0.25) {
+        if pl.points.iter().any(|&p| poly_contains_or_edge(pts, p)) {
+            return true;
+        }
+        let len = pl.points.len();
+        let segs = if pl.closed || closed_default { len } else { len.saturating_sub(1) };
+        for i in 0..segs {
+            let (a, b) = (pl.points[i], pl.points[(i + 1) % len]);
+            let seg_box = Rect::from_points(a, b).inflate(1e-4);
+            for &(c, d) in &poly_edges {
+                if seg_box.intersect(&Rect::from_points(c, d).inflate(1e-4)).is_empty() {
+                    continue;
+                }
+                if segs_strictly_cross(a, b, c, d) || segment_distance(c, a, b) <= 1e-4 {
+                    return true;
+                }
+            }
+        }
+    }
+    sh.fill.is_some() && pts.first().is_some_and(|&q| sh.path.contains(q, m, sh.fill_rule))
+}
+
 /// The Lasso (`raw.select_area`, issue #515): on every visible, unlocked layer, the parts of raw
 /// shapes inside the closed loop (cut at its edges, even-odd rule) and the objects whose bounding
 /// box lies wholly inside it. Designed so a straight-edged polygon mode can call the same command.
@@ -928,7 +961,9 @@ fn select_area(s: &mut Session, p: &Value) -> Result<Value> {
             }
             if poly_contains_rect(&pts, &loop_bounds, &bounds) {
                 picked.push(e.id);
-            } else if mergeable(&e).is_some() {
+            } else if let Some(sh) = mergeable(&e)
+                && shape_overlaps_poly(sh, &e.transform, &bounds, &pts)
+            {
                 partial.push(e.id);
             }
         }

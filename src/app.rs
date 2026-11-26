@@ -4458,7 +4458,7 @@ impl App {
         if play {
             self.toggle_play();
         }
-        if nudge != egui::Vec2::ZERO && crate::onion::editing(self) {
+        if nudge != egui::Vec2::ZERO && crate::onion::editing(self) && !self.onion_ui.sel.is_empty() {
             crate::onion::nudge(self, anicraft_engine::geom::Vec2::new(nudge.x, nudge.y));
         } else if nudge != egui::Vec2::ZERO && !self.s.selection.is_empty() {
             // One undo step: the move, with raw shapes left floating where they land (ADR 0122).

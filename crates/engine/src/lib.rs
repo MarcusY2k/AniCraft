@@ -542,6 +542,7 @@ pub struct Floating {
 /// at once (the parts must be elements to be selected) and records no undo step. It is taken
 /// back as soon as the selection lets go of its pieces with nothing else changed; the first edit
 /// that uses it records one step from before the cut.
+#[derive(Clone)]
 struct Provisional {
     /// Before the cut.
     before: history::Snapshot,
@@ -774,7 +775,15 @@ impl Session {
             return Err(EngineError::NeedsConfirmation(format!("{} {} (pass \"confirm\": true to proceed)", c.title, c.message)));
         }
         self.group_allows(&spec)?;
+        // If `settle_cut` heals a live provisional cut before a mutating command (such as a fresh
+        // marquee or lasso), save the entry state so a failing command restores it atomically.
+        let healed_cut = if spec.mutates && self.live_cut().is_some() {
+            Some((self.snapshot(spec.label), self.provisional.clone(), self.saved_state, self.rec.clone(), self.revision))
+        } else {
+            None
+        };
         self.settle_cut(id, params);
+        let healed_cut = healed_cut.filter(|_| self.provisional.is_none());
         if !spec.mutates {
             let r = (spec.run)(self, params);
             self.settle_cut(id, params);
@@ -845,8 +854,16 @@ impl Session {
                 Ok(v)
             }
             Err(e) => {
-                // Back to the cut, which stays provisional, or to before the command.
-                self.restore(rollback.unwrap_or(before));
+                if let Some((snap, provisional, saved_state, rec, revision)) = healed_cut {
+                    self.restore(snap);
+                    self.provisional = provisional;
+                    self.saved_state = saved_state;
+                    self.rec = rec;
+                    self.revision = revision;
+                } else {
+                    // Back to the cut, which stays provisional, or to before the command.
+                    self.restore(rollback.unwrap_or(before));
+                }
                 Err(e)
             }
         }

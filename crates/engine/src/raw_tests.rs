@@ -542,6 +542,78 @@ fn lasso_handles_self_intersecting_degenerate_and_over_limit_loops() {
     assert!(s.execute("raw.select_area", &json!({})).is_err());
 }
 
+#[test]
+fn lasso_on_tween_interior_excludes_outside_raw_shapes_and_keeps_overlapping_ones() {
+    let mut s = Session::new(anicraft_doc::Document::default());
+    run(&mut s, "draw.object_drawing", json!({"on": false}));
+    // Outside the triangle (0,0)-(100,0)-(0,100) yet inside its bounding box [0..100, 0..100].
+    run(&mut s, "draw.rect", json!({"x": 70, "y": 70, "w": 10, "h": 10, "fill": "#ff0000", "stroke": null}));
+    // Partly inside and partly outside the triangle (neither wholly inside nor disjoint).
+    run(&mut s, "draw.rect", json!({"x": 30, "y": 30, "w": 30, "h": 30, "fill": "#00aa00", "stroke": null}));
+    // Larger fill that completely encloses a small lasso polygon tested below.
+    run(&mut s, "draw.rect", json!({"x": 200, "y": 200, "w": 100, "h": 100, "fill": "#0000ff", "stroke": null}));
+    run(&mut s, "timeline.goto", json!({"frame": 10}));
+    run(&mut s, "timeline.insert_keyframe", json!({}));
+    run(&mut s, "timeline.goto", json!({"frame": 0}));
+    run(&mut s, "timeline.create_shape_tween", json!({}));
+    run(&mut s, "timeline.goto", json!({"frame": 5}));
+
+    let els = s.visible_elements();
+    let find_near = |cx: f32, cy: f32| {
+        els.iter()
+            .find(|e| {
+                let c = s.element_bounds(e.id).center();
+                (c.x - cx).abs() < 5.0 && (c.y - cy).abs() < 5.0
+            })
+            .expect("tweened raw shape")
+            .id
+    };
+    let outside_id = find_near(75.0, 75.0);
+    let crossing_id = find_near(45.0, 45.0);
+    let enclosing_id = find_near(250.0, 250.0);
+
+    let r = run(&mut s, "raw.select_area", json!({"points": [[0, 0], [100, 0], [0, 100]]}));
+    assert_eq!(r["cut"], 0, "tween interior selects whole without cutting");
+    assert!(!s.selection.has_id(outside_id), "shape outside triangle must not be selected");
+    assert!(s.selection.has_id(crossing_id), "overlapping raw shape on tween interior stays selected whole");
+
+    let r = run(&mut s, "raw.select_area", json!({"points": [[220, 220], [240, 220], [220, 240]]}));
+    assert_eq!(r["cut"], 0);
+    assert!(s.selection.has_id(enclosing_id), "filled shape enclosing the lasso polygon is selected whole");
+}
+
+#[test]
+fn invalid_lasso_request_preserves_live_provisional_cut() {
+    let mut s = rect_session();
+    let whole_area = fill_area(&s);
+    let tri = json!([[0, -10], [110, -10], [110, 90]]);
+    let r = run(&mut s, "raw.select_area", json!({"points": tri}));
+    assert!(r["cut"].as_u64().unwrap_or(0) > 0);
+    let sel_before = s.selection.clone();
+    let counts_before = count(&s);
+    assert_ne!(counts_before, (1, 4), "cut split the raw rectangle");
+
+    // Rejected requests must not heal the live cut or fall back to selecting the whole source shape.
+    assert!(s.execute("raw.select_area", &json!({})).is_err());
+    assert_eq!(s.selection, sel_before, "selected cut piece stays selected after invalid request");
+    assert_eq!(count(&s), counts_before, "provisional cut stays live after invalid request");
+    assert!(s.execute("raw.select_area", &json!({"points": [[0, 0], [1e30, 0], [0, 10]]})).is_err());
+    assert_eq!(s.selection, sel_before);
+    assert_eq!(count(&s), counts_before);
+
+    // The preserved provisional cut still deletes only the selected piece and undoes back whole.
+    run(&mut s, "edit.delete", json!({}));
+    assert!(fill_area(&s) > 0.0 && fill_area(&s) < whole_area * 0.9, "only the cut piece was deleted");
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(count(&s), (1, 4));
+
+    // A valid replacement lasso still heals the previous cut first.
+    run(&mut s, "raw.select_area", json!({"points": tri}));
+    run(&mut s, "raw.select_area", json!({"points": [[-10, -10], [50, -10], [-10, 50]]}));
+    run(&mut s, "edit.deselect", json!({}));
+    assert_eq!(count(&s), (1, 4), "valid replacement healed the previous cut");
+}
+
 // ----- what a drag takes ------------------------------------------------------------------------------
 
 #[test]

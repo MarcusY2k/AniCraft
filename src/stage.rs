@@ -815,6 +815,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 }
                 let pts = std::mem::take(&mut app.lasso);
                 let points: Vec<[f32; 2]> = pts.iter().map(|p| [p.x, p.y]).collect();
+                if multi {
+                    app.onion_ui.sel.clear();
+                }
                 app.run("raw.select_area", json!({"points": points, "add": shift}));
             }
             Drag::Shape { start, cur } => create_shape(app, start, cur),
@@ -895,6 +898,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     app.run("element.pick", json!({"x": sp.x, "y": sp.y, "add": shift}));
                 }
                 Tool::Lasso if !panning => {
+                    if multi && !shift {
+                        app.onion_ui.sel.clear();
+                    }
                     app.run("raw.select_area", json!({"points": [], "add": shift}));
                 }
                 Tool::Zoom => {
@@ -976,7 +982,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         if crate::shape_hints::menu(app, ui) || crate::motion_path::menu(app, ui) || crate::pathtools::point_menu(app, ui) {
             return;
         }
-        if multi {
+        if multi && (!app.onion_ui.sel.is_empty() || app.s.selection.is_empty()) {
             crate::onion::context_menu(app, ui);
             return;
         }
@@ -5626,5 +5632,74 @@ mod pointer_tests {
         frame(&mut app, Modifiers::NONE, vec![button(empty, false)]);
         frame(&mut app, Modifiers::NONE, Vec::new());
         assert!(app.s.selection.is_empty(), "click on empty stage clears selection");
+    }
+
+    #[test]
+    fn lasso_reconciles_with_edit_multiple_frames_selection() {
+        let (mut app, ctx, at) = scene();
+        // Two keyframes with the raw rectangle at (100..300, 100..220), then Edit Multiple Frames on.
+        app.run("timeline.goto", json!({"frame": 2}));
+        app.run("timeline.insert_keyframe", json!({}));
+        app.run("timeline.goto", json!({"frame": 0}));
+        crate::onion::toggle_edit_multiple(&mut app);
+        crate::onion::select_all(&mut app);
+        assert!(crate::onion::editing(&app));
+        assert!(!app.onion_ui.sel.is_empty() && app.s.selection.is_empty());
+
+        let mut t = 2.0;
+        let mut frame = |app: &mut App, mods: Modifiers, events: Vec<Event>| {
+            t += 0.05;
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 940.0))), time: Some(t), events: std::iter::once(Event::ModifiersChanged(mods)).chain(events).collect(), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| app.frame(ui));
+            out.textures_delta.clear();
+        };
+        let drag_poly = |frame: &mut dyn FnMut(&mut App, Modifiers, Vec<Event>), app: &mut App, pts: &[(f32, f32)]| {
+            let btn = |pos: Pos2, pressed: bool| Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Modifiers::NONE };
+            let first = at(pts[0].0, pts[0].1);
+            frame(app, Modifiers::NONE, vec![Event::PointerMoved(first)]);
+            frame(app, Modifiers::NONE, vec![btn(first, true)]);
+            for &(x, y) in &pts[1..] {
+                frame(app, Modifiers::NONE, vec![Event::PointerMoved(at(x, y))]);
+            }
+            let last = at(pts[pts.len() - 1].0, pts[pts.len() - 1].1);
+            frame(app, Modifiers::NONE, vec![btn(last, false)]);
+            frame(app, Modifiers::NONE, Vec::new());
+        };
+
+        // Pick Lasso and drag over the right half of the raw rectangle.
+        frame(&mut app, Modifiers::NONE, vec![Event::Key { key: Key::L, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }]);
+        assert_eq!(app.tool, Tool::Lasso);
+        drag_poly(&mut frame, &mut app, &[(200.0, 80.0), (320.0, 80.0), (320.0, 240.0), (200.0, 240.0)]);
+        assert!(app.onion_ui.sel.is_empty(), "lasso clears multi-frame selection");
+        assert!(!app.s.selection.is_empty(), "lasso selection is active");
+        for id in ["edit.delete", "edit.cut", "edit.copy"] {
+            assert_ne!(crate::onion::enabled(&app, id), Some(false), "{id} stays enabled for the lasso selection");
+        }
+
+        // Arrow keys nudge the lasso selection while Edit Multiple Frames is on.
+        let before = app.s.selection_bounds();
+        frame(&mut app, Modifiers::NONE, vec![Event::Key { key: Key::ArrowRight, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }]);
+        let after = app.s.selection_bounds();
+        assert!(after.min.x > before.min.x, "arrow key moved lasso selection: {before:?} -> {after:?}");
+
+        // Copy and Delete act on the lasso selection on the playhead.
+        app.invoke("edit.copy");
+        assert!(!app.s.clipboard.is_empty(), "copy took the lasso selection");
+        let count_before_delete = app.s.visible_elements().len();
+        app.invoke("edit.delete");
+        assert!(app.s.visible_elements().len() < count_before_delete, "delete removed the lasso selection");
+        assert!(app.s.selection.is_empty() && app.onion_ui.sel.is_empty());
+
+        // Restore, Lasso again, then run a multi-frame marquee: only the marquee selection stays.
+        app.invoke("edit.undo");
+        app.invoke("edit.undo");
+        drag_poly(&mut frame, &mut app, &[(200.0, 80.0), (320.0, 80.0), (320.0, 240.0), (200.0, 240.0)]);
+        assert!(!app.s.selection.is_empty());
+        crate::onion::marquee(&mut app, pos2(50.0, 50.0), pos2(350.0, 260.0), false);
+        assert!(app.s.selection.is_empty(), "multi-frame marquee clears earlier lasso selection");
+        assert!(!app.onion_ui.sel.is_empty(), "multi-frame marquee populated onion_ui.sel");
+        app.invoke("edit.delete");
+        assert!(app.s.visible_elements().is_empty(), "delete removed marqueed artwork across frames");
+        assert!(app.s.selection.is_empty() && app.onion_ui.sel.is_empty());
     }
 }
