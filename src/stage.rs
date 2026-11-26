@@ -1448,7 +1448,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         let mode = app.s.style.transform_origin;
         let own = !multi && mode != anicraft_engine::TransformOrigin::Selection && app.s.selection.len() <= MAX_ORIGIN_MARKS;
         let alt_pivot = match app.drag {
-            Drag::Transform { kind: XfKind::Rotate, start, bounds, .. } if alt && !own => Some(app.xf.drag.unwrap_or_else(|| crate::xform::Frame::upright(bounds)).rotate_pivot(start, true)),
+            Drag::Transform { kind: XfKind::Rotate, start, bounds, .. } if alt && mode == anicraft_engine::TransformOrigin::Selection => Some(app.xf.drag.unwrap_or_else(|| crate::xform::Frame::upright(bounds)).rotate_pivot(start, true)),
             Drag::MultiTransform { kind: XfKind::Rotate, start, bounds, .. } if alt => Some(crate::xform::Frame::upright(bounds).rotate_pivot(start, true)),
             _ => None,
         };
@@ -5639,6 +5639,69 @@ mod pointer_tests {
         assert!(after_box.corners()[3].distance(bl) < 1.0, "opposite corner stayed fixed: {:?} vs {bl:?}", after_box.corners()[3]);
         assert!(after_box.corners()[1].distance(tr) > 5.0, "grabbed corner moved: {:?} vs {tr:?}", after_box.corners()[1]);
         assert_eq!(app.s.history().undo_len(), undo + 1, "one undo step");
+    }
+
+    /// #629: in Center or Registration mode, Alt while rotating still turns each object about its
+    /// own point even past `MAX_ORIGIN_MARKS`, so the overlay must not jump to the opposite corner.
+    #[test]
+    fn alt_rotate_pivot_overlay_respects_origin_mode_past_marker_limit() {
+        let (mut app, ctx, at) = scene();
+        app.run("edit.select_all", json!({}));
+        app.run("edit.delete", json!({}));
+        app.s.begin_gesture("setup");
+        for i in 0..=MAX_ORIGIN_MARKS {
+            let (x, y) = (100 + (i % 25) * 12, 100 + (i / 25) * 10);
+            let _ = app.s.execute("draw.rect", &json!({"x": x, "y": y, "w": 8, "h": 6, "fill": "#3366ff", "stroke": null, "object": true}));
+        }
+        app.s.end_gesture();
+        app.run("edit.select_all", json!({}));
+        assert!(app.s.selection.len() > MAX_ORIGIN_MARKS);
+        app.tool = Tool::Transform;
+        let mut t = 2.0;
+        let mut frame = |app: &mut App, modifiers: Modifiers, events: Vec<Event>| {
+            t += 0.05;
+            let mut all = vec![Event::ModifiersChanged(modifiers)];
+            all.extend(events);
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 940.0))), time: Some(t), events: all, ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| app.frame(ui));
+            out.textures_delta.clear();
+            out.shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Circle(c) if (c.radius - 4.0).abs() < 1e-3 && c.fill == Color32::WHITE && c.stroke == Stroke::new(1.0, T.selection) => Some(c.center),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        frame(&mut app, Modifiers::NONE, Vec::new());
+
+        let mut alt_drag_marks = |app: &mut App, mode: anicraft_engine::TransformOrigin| {
+            app.run("modify.transform_origin", json!({"mode": mode.key()}));
+            frame(app, Modifiers::NONE, Vec::new());
+            let before_box = crate::xform::frame(app).expect("a selection has a box");
+            let [_, tr, _, bl] = before_box.corners();
+            let outside = tr + (tr - before_box.handle(0, 0)).normalized() * (14.0 / app.view.zoom);
+            let (a, b) = (at(outside.x, outside.y), at(outside.x + 20.0, outside.y + 40.0));
+            frame(app, Modifiers::ALT, vec![Event::PointerMoved(a)]);
+            frame(app, Modifiers::ALT, vec![Event::PointerButton { pos: a, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::ALT }]);
+            let marks = frame(app, Modifiers::ALT, vec![Event::PointerMoved(b)]);
+            assert!(matches!(app.drag, Drag::Transform { kind: XfKind::Rotate, .. }), "in rotate drag for {mode:?}");
+            let cur_box = crate::xform::frame(app).expect("a selection has a box");
+            frame(app, Modifiers::ALT, vec![Event::PointerButton { pos: b, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::ALT }]);
+            frame(app, Modifiers::NONE, Vec::new());
+            app.run("edit.undo", json!({}));
+            (marks, at(cur_box.point.x, cur_box.point.y), at(bl.x, bl.y))
+        };
+
+        for mode in [anicraft_engine::TransformOrigin::Center, anicraft_engine::TransformOrigin::Registration] {
+            let (marks, box_pt, opp) = alt_drag_marks(&mut app, mode);
+            assert_eq!(marks.len(), 1, "past MAX_ORIGIN_MARKS one fallback mark shows for {mode:?}");
+            assert!(marks[0].distance(box_pt) < marks[0].distance(opp), "{mode:?} must keep the box point, not jump to the opposite corner: mark={:?}, box_pt={box_pt:?}, opp={opp:?}", marks[0]);
+        }
+
+        let (marks, box_pt, opp) = alt_drag_marks(&mut app, anicraft_engine::TransformOrigin::Selection);
+        assert_eq!(marks.len(), 1, "Selection mode shows the opposite-corner pivot");
+        assert!(marks[0].distance(opp) < marks[0].distance(box_pt), "Selection mode shows the opposite corner even past MAX_ORIGIN_MARKS: mark={:?}, box_pt={box_pt:?}, opp={opp:?}", marks[0]);
     }
 
     /// A double-click: press, release, `gap` seconds, press, release (each its own frame).
