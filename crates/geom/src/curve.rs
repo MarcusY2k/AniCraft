@@ -6,6 +6,7 @@
 
 use crate::edit::{merge_cubics, simplify};
 use crate::path::segment_distance;
+use crate::polygons;
 use crate::walk::cubic_point;
 use crate::{Affine, Path, PathCmd, Rect, Vec2};
 
@@ -19,6 +20,13 @@ const MAX_SUBPATH_SEGS: usize = 16_384;
 const LINK_EPS: f32 = 1e-4;
 /// Distance below which a cubic's handles count as lying on its chord.
 const FLAT_EPS: f32 = 1e-3;
+/// Minimum enclosed area for a closed subpath to count as enclosing visible fill (smaller
+/// originals are already degenerate, so area-collapse checks skip them).
+const AREA_EPS: f64 = 1e-6;
+/// Minimum fraction of a closed subpath's enclosed area that a smoothed candidate must keep;
+/// candidates below this have collapsed to near-collinear curves (even a triangle smoothed at
+/// strength 1.0 keeps more than 1/16 of its area).
+const MIN_SMOOTH_AREA_RATIO: f64 = 0.01;
 
 #[derive(Clone, Copy)]
 enum Seg {
@@ -96,6 +104,19 @@ impl Subpath {
 
     fn cubic_count(&self) -> usize {
         self.segs.iter().filter(|s| matches!(s, Seg::Cubic(_))).count()
+    }
+
+    fn enclosed_area(&self) -> f64 {
+        let diag = self.bounds_diag();
+        if !diag.is_finite() || diag <= LINK_EPS {
+            return 0.0;
+        }
+        // Scale flattening tolerance with subpath size so huge coordinates stay bounded and small
+        // shapes keep accuracy (`Path::flatten` falls back to 0.1 for tolerances <= 1e-4).
+        let flat_tol = (diag * 0.002).max(1e-3);
+        let loops: Vec<Vec<Vec2>> = self.to_path().flatten(&Affine::IDENTITY, flat_tol).into_iter().map(|pl| pl.points).collect();
+        let area = polygons::area(&loops);
+        if area.is_finite() { area } else { 0.0 }
     }
 }
 
@@ -440,8 +461,14 @@ fn smooth_subpath(sub: &Subpath, s: f32) -> Subpath {
     let segs = merged.into_iter().map(Seg::from_cubic).collect();
     let cand = Subpath { start, segs, closed: sub.closed };
     if sub.closed {
-        let collapsed = (cand.bounds_diag() <= LINK_EPS && sub.bounds_diag() > LINK_EPS)
+        let mut collapsed = (cand.bounds_diag() <= LINK_EPS && sub.bounds_diag() > LINK_EPS)
             || (cand.cubic_count() == 0 && cand.segs.len() < 3 && (sub.cubic_count() > 0 || sub.segs.len() >= 3));
+        if !collapsed {
+            let orig_area = sub.enclosed_area();
+            if orig_area > AREA_EPS && cand.enclosed_area() < orig_area * MIN_SMOOTH_AREA_RATIO {
+                collapsed = true;
+            }
+        }
         if collapsed {
             return Subpath { start: sub.start, segs: sub.segs.clone(), closed: true };
         }
@@ -787,6 +814,36 @@ mod tests {
             }
         }
         assert!(b.width() > 40.0 && b.height() > 40.0, "two-anchor loop kept its fill area: {b:?}, cmds={:?}", out.cmds);
+    }
+
+    #[test]
+    fn smooth_does_not_collapse_collinear_anchor_closed_loop() {
+        let path_area = |p: &Path| {
+            let loops: Vec<Vec<Vec2>> = p.flatten(&Affine::IDENTITY, 0.25).into_iter().map(|pl| pl.points).collect();
+            polygons::area(&loops)
+        };
+        let mut bumps = Path::new();
+        bumps
+            .move_to(Vec2::new(0.0, 0.0))
+            .cubic_to(Vec2::new(0.0, 80.0), Vec2::new(100.0, 80.0), Vec2::new(100.0, 0.0))
+            .cubic_to(Vec2::new(100.0, 80.0), Vec2::new(200.0, 80.0), Vec2::new(200.0, 0.0))
+            .line_to(Vec2::new(0.0, 0.0))
+            .close();
+        let orig_area = path_area(&bumps);
+        let out = smooth(&bumps, 1.0);
+        assert!(matches!(out.cmds.last(), Some(PathCmd::Close)), "stays closed: {:?}", out.cmds);
+        let out_area = path_area(&out);
+        assert!(
+            out_area >= orig_area * 0.5,
+            "collinear-anchor closed loop kept its fill area: {out_area} vs {orig_area}, cmds={:?}",
+            out.cmds
+        );
+
+        let square = Path::rect(0.0, 0.0, 100.0, 100.0);
+        let smoothed = smooth(&square, 1.0);
+        assert!(matches!(smoothed.cmds.last(), Some(PathCmd::Close)), "closed loop stays closed: {:?}", smoothed.cmds);
+        assert_ne!(smoothed, square, "normal closed loop still changes when smoothed");
+        assert!(path_area(&smoothed) > 0.0, "smoothed loop still encloses area");
     }
 
     #[test]
