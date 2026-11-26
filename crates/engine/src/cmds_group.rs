@@ -419,6 +419,9 @@ fn combine_shapes(s: &mut Session, op: Op, els: Vec<Arc<Element>>, shapes: Vec<(
             }
         }
     }
+    if open_groups(s) + 1 > MAX_GROUP_DEPTH && results.iter().any(|(_, r)| r.as_ref().is_some_and(|e| matches!(e.kind, ElementKind::Group { .. }))) {
+        return Err(EngineError::State(format!("groups nest at most {MAX_GROUP_DEPTH} deep")));
+    }
     // The sources go; each result takes its source's place.
     let gone: HashSet<usize> = shapes.iter().map(|x| x.0).collect();
     let mut created = Vec::new();

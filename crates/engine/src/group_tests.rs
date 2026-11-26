@@ -424,6 +424,58 @@ fn create_object_refuses_drawing_objects_and_non_shapes() {
 }
 
 #[test]
+fn combine_and_create_object_refuse_groups_past_max_depth() {
+    let mut s = Session::new(anicraft_doc::Document::default());
+    run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 40, "h": 40, "fill": "#ff0000", "stroke": null}));
+    for _ in 0..anicraft_doc::MAX_GROUP_DEPTH {
+        run(&mut s, "edit.select_all", json!({}));
+        let g = id_of(&run(&mut s, "modify.group", json!({})), "group");
+        run(&mut s, "symbol.edit", json!({"id": g.0}));
+    }
+    assert_eq!(crate::cmds_group::open_groups(&s), anicraft_doc::MAX_GROUP_DEPTH);
+    // Two disjoint raw shapes with different fills would produce a group at depth MAX_GROUP_DEPTH + 1.
+    run(&mut s, "edit.select_all", json!({}));
+    run(&mut s, "edit.delete", json!({}));
+    run(&mut s, "draw.object_drawing", json!({"on": false}));
+    run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 40, "h": 40, "fill": "#ff0000", "stroke": null}));
+    run(&mut s, "draw.rect", json!({"x": 80, "y": 0, "w": 40, "h": 40, "fill": "#0000ff", "stroke": null}));
+    run(&mut s, "edit.select_all", json!({}));
+    let before = s.doc.clone();
+    for cmd in ["modify.create_object", "modify.union"] {
+        assert!(matches!(s.execute(cmd, &json!({})), Err(crate::EngineError::State(ref m)) if m.contains("groups nest at most")), "{cmd} should refuse past max depth");
+        assert_eq!(s.doc, before, "{cmd} leaves document unchanged on refusal");
+    }
+    // Punch and Crop on a stroked shape (fill + stroke produces a group) must also refuse.
+    run(&mut s, "edit.select_all", json!({}));
+    run(&mut s, "edit.delete", json!({}));
+    run(&mut s, "draw.object_drawing", json!({"on": true}));
+    run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 100, "h": 100, "fill": "#ff0000", "stroke": "#000000"}));
+    run(&mut s, "draw.rect", json!({"x": 50, "y": 50, "w": 100, "h": 100, "fill": "#0000ff", "stroke": null}));
+    run(&mut s, "edit.select_all", json!({}));
+    let before = s.doc.clone();
+    for cmd in ["modify.punch", "modify.crop"] {
+        assert!(matches!(s.execute(cmd, &json!({})), Err(crate::EngineError::State(ref m)) if m.contains("groups nest at most")), "{cmd} should refuse past max depth");
+        assert_eq!(s.doc, before, "{cmd} leaves document unchanged on refusal");
+    }
+    // Results that stay a single drawing object (not a group) remain allowed at MAX_GROUP_DEPTH.
+    run(&mut s, "edit.select_all", json!({}));
+    run(&mut s, "edit.delete", json!({}));
+    run(&mut s, "draw.object_drawing", json!({"on": false}));
+    run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 40, "h": 40, "fill": "#ff0000", "stroke": null}));
+    run(&mut s, "draw.rect", json!({"x": 80, "y": 0, "w": 40, "h": 40, "fill": "#ff0000", "stroke": null}));
+    run(&mut s, "edit.select_all", json!({}));
+    run(&mut s, "modify.create_object", json!({}));
+    assert_eq!(top(&s).len(), 1);
+    assert!(matches!(&top(&s)[0].kind, ElementKind::Shape(sh) if !sh.merge), "same-fill create_object produces a drawing object");
+    // Single-shape Create Object also stays allowed at MAX_GROUP_DEPTH.
+    run(&mut s, "draw.rect", json!({"x": 200, "y": 0, "w": 40, "h": 40, "fill": "#00ff00", "stroke": null}));
+    let raw_id = top(&s).iter().find(|e| matches!(&e.kind, ElementKind::Shape(sh) if sh.merge)).map(|e| e.id).unwrap_or_else(|| panic!("raw"));
+    run(&mut s, "element.select", json!({"ids": [raw_id.0]}));
+    run(&mut s, "modify.create_object", json!({}));
+    assert!(top(&s).iter().all(|e| matches!(&e.kind, ElementKind::Shape(sh) if !sh.merge)), "single raw shape became a drawing object");
+}
+
+#[test]
 fn ctrl_drag_pulls_a_sharp_corner_out_of_a_line() {
     // What the Selection tool's Ctrl-drag runs (issue #200): a point where the edge was grabbed,
     // then that point moved, in one gesture.
