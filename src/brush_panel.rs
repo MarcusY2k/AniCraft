@@ -316,6 +316,7 @@ pub fn props(app: &mut App, ui: &mut egui::Ui, row: impl Fn(&mut egui::Ui, &str,
     }
     if save {
         app.brush_lib.open = true;
+        app.brush_lib.renaming = None;
         app.brush_lib.focus_save = true;
         if app.brush_lib.save_name.is_empty()
             && let Some(name) = current_shown
@@ -567,6 +568,42 @@ mod tests {
         settle(&ctx, &mut app);
         let stroke_saved = app.s.brushes.find("Fine Stroke").expect("saved Paint Brush preset");
         assert!(app.paint_brush.matches(&stroke_saved), "saved preset matches Paint Brush settings");
+    }
+
+    /// Clicking Properties' Save… while an inline rename is active in Brush Library ends the
+    /// rename so the rename field does not steal focus back from "Name for the brush".
+    #[test]
+    fn properties_save_cancels_active_rename_and_focuses_save_field() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut app = App::with_context(&ctx, Session::default(), Some(std::path::PathBuf::from("unused.png")));
+        app.tool = Tool::Brush;
+        app.brush.size = 24.0;
+        let mut params = app.brush.preset("My Ink").params();
+        params["name"] = serde_json::json!("My Ink");
+        assert!(app.run("brush.preset_save", params).is_some());
+
+        app.brush_lib.open = true;
+        app.brush_lib.renaming = Some(("My Ink".into(), "My Ink".into()));
+        let tree = settle(&ctx, &mut app);
+        let rename_id = find(&tree, Role::TextInput, "Brush name").expect("inline rename field");
+        assert_eq!(tree.focus, rename_id, "rename field starts focused");
+
+        let save_id = find(&tree, Role::Button, "Save brush as preset").expect("Save… button in Properties");
+        click_node(&ctx, &mut app, save_id);
+        let tree = settle(&ctx, &mut app);
+        assert!(app.brush_lib.renaming.is_none(), "active rename is cleared");
+        assert!(find(&tree, Role::TextInput, "Brush name").is_none(), "rename field is no longer shown");
+        let name_id = find(&tree, Role::TextInput, "Name for the brush").expect("Name field in Brush Library");
+        assert_eq!(tree.focus, name_id, "Name field keeps keyboard focus after settling");
+
+        // Typing and pressing Enter saves a new preset without renaming the existing one.
+        run_frame(&ctx, &mut app, vec![Event::Text("Fresh Ink".into())]);
+        run_frame(&ctx, &mut app, vec![Event::Key { key: Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }]);
+        settle(&ctx, &mut app);
+        assert!(app.s.brushes.find("My Ink").is_some(), "existing brush was not renamed");
+        let saved = app.s.brushes.find("Fresh Ink").expect("new brush saved from save field");
+        assert!(app.brush.matches(&saved));
     }
 }
 
