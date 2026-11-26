@@ -559,11 +559,21 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     // horizontal delta). Anywhere over the timeline, rows and cells included. Only visible
     // rows and columns are painted, so cost is independent of document size.
     // Rows are the layers not inside a closed folder (`rows[r]` is row r's layer index), or
-    // with View Only the Active Layer on, the active layer alone (#529).
+    // with View Only the Active Layer on, the active layer alone — or the active folder with
+    // the layers inside it, still respecting closed folders (#529, #653).
     let rows: Vec<usize> = {
         let tl = app.s.timeline();
         if app.tl_only_active {
-            tl.layers.iter().position(|l| l.id == app.s.layer).into_iter().collect()
+            match tl.layers.iter().enumerate().find(|(_, l)| l.id == app.s.layer) {
+                Some((ai, layer)) if layer.kind == LayerKind::Folder => {
+                    let active = layer.id;
+                    (0..tl.layers.len())
+                        .filter(|&i| (i == ai || tl.is_inside(i, active)) && !app.tl_collapsed.iter().any(|f| tl.is_inside(i, *f) && !tl.is_inside(ai, *f)))
+                        .collect()
+                }
+                Some((ai, _)) => vec![ai],
+                None => Vec::new(),
+            }
         } else {
             (0..tl.layers.len()).filter(|&i| !app.tl_collapsed.iter().any(|f| tl.is_inside(i, *f))).collect()
         }
@@ -620,10 +630,23 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let ruler = Rect::from_min_max(grid.left_top(), pos2(grid.right(), grid.top() + RULER_H));
     painter.rect_filled(ruler, 0.0, T.panel_alt);
     painter.rect_filled(Rect::from_min_max(body.left_top(), pos2(grid.left(), ruler.bottom())), 0.0, T.panel_alt);
-    let heading = painter.text(pos2(body.left() + 10.0, ruler.center().y), Align2::LEFT_CENTER, tr!("Layers"), font(Type::Heading), color(Type::Heading));
-    // The parenting view's toggle sits beside the heading, as in Animate (ADR 0113).
     let header_side = TOGGLE.min(RULER_H);
-    let parent_toggle = Rect::from_center_size(pos2(heading.right() + 8.0 + header_side * 0.5, ruler.center().y), vec2(header_side, header_side));
+    let all_layers_head =
+        |k: f32| Rect::from_center_size(pos2(grid.left() - 16.0 - k * (TOGGLE + 2.0), ruler.center().y), vec2(header_side, header_side));
+    let eye_left = all_layers_head(2.0).left();
+    // Drop the "Layers" heading when it would push the toggles into the all-layers eye (#653).
+    let heading_galley = painter.layout_no_wrap(tr!("Layers").to_string(), font(Type::Heading), color(Type::Heading));
+    let (hw, hh) = (heading_galley.rect.width(), heading_galley.rect.height());
+    let heading_pos = pos2(body.left() + 10.0, ruler.center().y - hh * 0.5);
+    let heading = Rect::from_min_size(heading_pos, vec2(hw, hh));
+    let show_heading = heading.right() + 8.0 + 2.0 * header_side + 2.0 <= eye_left - 4.0;
+    if show_heading {
+        painter.galley(heading_pos, heading_galley, color(Type::Heading));
+    }
+    // The parenting view's toggle sits beside the heading (or at the left edge when narrow), as
+    // in Animate (ADR 0113).
+    let toggle_left = if show_heading { heading.right() + 8.0 } else { body.left() + 6.0 };
+    let parent_toggle = Rect::from_center_size(pos2(toggle_left + header_side * 0.5, ruler.center().y), vec2(header_side, header_side));
     crate::parenting::head_toggle(app, ui, &painter, parent_toggle);
     // View Only the Active Layer (#529), after it: the other rows go until it is clicked again.
     let only_toggle = parent_toggle.translate(vec2(header_side + 2.0, 0.0));
@@ -639,8 +662,6 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             app.tl_only_active = !on;
         }
     }
-    let all_layers_head =
-        |k: f32| Rect::from_center_size(pos2(grid.left() - 16.0 - k * (TOGGLE + 2.0), ruler.center().y), vec2(header_side, header_side));
     // The eye, the padlock and the square above the columns they head show, lock or outline
     // every layer at once, as in Animate (#422). Each shows its other face once every layer
     // is that way, and the next click brings them all back.
@@ -1716,7 +1737,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         if fits {
             painter.galley(at, label, tint);
         }
-        let response = ui.interact(if fits { label_rect } else { heading }, ui.scope_id().with("layer_range"), Sense::hover());
+        let fallback = if show_heading {
+            heading
+        } else {
+            Rect::from_min_max(pos2(only_toggle.right() + 1.0, ruler.top()), pos2((eye_left - 1.0).max(only_toggle.right() + 2.0), ruler.bottom()))
+        };
+        let response = ui.interact(if fits { label_rect } else { fallback }, ui.scope_id().with("layer_range"), Sense::hover());
         response.widget_info(|| egui::WidgetInfo::labeled(Role::Label, true, &more));
         if !fits {
             response.on_hover_text(more);
@@ -2699,6 +2725,87 @@ mod tests {
         click(&ctx, &mut app, at, Modifiers::NONE);
         let t = tree(&ctx, &mut app, Vec::new());
         assert_eq!(rows(&t), ["Ground", "Hero", "Sky"], "every row back");
+    }
+
+    /// #653: with View Only the Active Layer on, an active folder keeps the layers inside it
+    /// (nested folders included, still respecting closed folders) while hiding unrelated layers.
+    #[test]
+    fn view_only_active_layer_keeps_an_active_folders_contents() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut app = App::with_context(&ctx, anicraft_engine::Session::default(), Some(std::path::PathBuf::from("unused.png")));
+        app.show_panel(crate::dock::Panel::Timeline);
+        let outside = app.s.layer;
+        app.run("layer.rename", json!({"layer": outside.0, "name": "Outside"}));
+        let folder = LayerId(app.run("layer.new_folder", json!({"name": "Props", "wrap": false})).expect("folder")["layer"].as_u64().expect("id"));
+        let a = LayerId(app.run("layer.new", json!({"name": "Child A"})).expect("a")["layer"].as_u64().expect("id"));
+        let b = LayerId(app.run("layer.new", json!({"name": "Child B"})).expect("b")["layer"].as_u64().expect("id"));
+        let sub = LayerId(app.run("layer.new_folder", json!({"name": "Nested", "wrap": false})).expect("sub")["layer"].as_u64().expect("id"));
+        let deep = LayerId(app.run("layer.new", json!({"name": "Deep"})).expect("deep")["layer"].as_u64().expect("id"));
+        app.run("layer.move", json!({"layer": a.0, "into": folder.0}));
+        app.run("layer.move", json!({"layer": b.0, "into": folder.0}));
+        app.run("layer.move", json!({"layer": sub.0, "into": folder.0}));
+        app.run("layer.move", json!({"layer": deep.0, "into": sub.0}));
+        app.run("layer.select", json!({"layer": folder.0}));
+        app.tl_only_active = true;
+        let tree = |ctx: &egui::Context, app: &mut App| {
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 940.0))), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| app.frame(ui));
+            out.textures_delta.clear();
+            out.platform_output.accesskit_update.expect("the accessibility tree")
+        };
+        let rows = |t: &egui::accesskit::TreeUpdate| {
+            ["Props", "Child A", "Child B", "Nested", "Deep", "Outside"]
+                .into_iter()
+                .filter(|n| t.nodes.iter().any(|(_, x)| x.label().is_some_and(|l| l.starts_with(&format!("{n} · ")))))
+                .collect::<Vec<_>>()
+        };
+        tree(&ctx, &mut app);
+        let t = tree(&ctx, &mut app);
+        assert_eq!(rows(&t), ["Props", "Child A", "Child B", "Nested", "Deep"], "active folder keeps its contents and hides unrelated layers");
+        app.tl_collapsed.insert(sub);
+        let t = tree(&ctx, &mut app);
+        assert_eq!(rows(&t), ["Props", "Child A", "Child B", "Nested"], "a closed nested folder hides its own children");
+        app.tl_collapsed.insert(folder);
+        let t = tree(&ctx, &mut app);
+        assert_eq!(rows(&t), ["Props"], "closing the active folder hides its contents");
+        app.run("layer.select", json!({"layer": outside.0}));
+        let t = tree(&ctx, &mut app);
+        assert_eq!(rows(&t), ["Outside"], "a non-folder active layer shows only its own row");
+    }
+
+    /// #653: at any reachable layers-column width (down to the narrowest), the View Only the
+    /// Active Layer toggle never overlaps the parenting toggle or the all-layers controls.
+    #[test]
+    fn view_only_active_layer_toggle_clears_other_header_controls_when_narrow() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut app = App::with_context(&ctx, anicraft_engine::Session::default(), Some(std::path::PathBuf::from("unused.png")));
+        app.show_panel(crate::dock::Panel::Timeline);
+        let tree = |ctx: &egui::Context, app: &mut App| {
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 940.0))), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| app.frame(ui));
+            out.textures_delta.clear();
+            out.platform_output.accesskit_update.expect("the accessibility tree")
+        };
+        let bounds = |t: &egui::accesskit::TreeUpdate, names: &[&str]| {
+            let b = t.nodes.iter().map(|(_, n)| n).find(|n| n.label().is_some_and(|l| names.contains(&l))).and_then(|n| n.bounds()).unwrap_or_else(|| panic!("no control in {names:?}"));
+            Rect::from_min_max(pos2(b.x0 as f32, b.y0 as f32), pos2(b.x1 as f32, b.y1 as f32))
+        };
+        for width in [*crate::prefs::LAYER_W_RANGE.start(), 180.0, 200.0, crate::prefs::LAYER_W_DEFAULT] {
+            app.prefs.timeline_layer_w = width;
+            tree(&ctx, &mut app);
+            let t = tree(&ctx, &mut app);
+            let only = bounds(&t, &["View only the active layer"]);
+            let parent = bounds(&t, &["Parenting view"]);
+            let eye = bounds(&t, &["Hide all layers", "Show all layers"]);
+            let lock = bounds(&t, &["Lock all layers", "Unlock all layers"]);
+            let outline = bounds(&t, &["Show all layers as outlines", "Show all layers as artwork"]);
+            for (name, other) in [("Parenting view", parent), ("Hide/Show all layers", eye), ("Lock/Unlock all layers", lock), ("Outline all layers", outline)] {
+                assert!(!only.intersects(other), "View only the active layer ({only:?}) intersects {name} ({other:?}) at width {width}");
+            }
+            assert!(!parent.intersects(eye), "Parenting view ({parent:?}) intersects Hide/Show all layers ({eye:?}) at width {width}");
+        }
     }
 
     #[test]
