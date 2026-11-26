@@ -476,6 +476,65 @@ fn combine_and_create_object_refuse_groups_past_max_depth() {
 }
 
 #[test]
+fn create_object_refuses_warped_bitmap_fill_but_allows_warped_solid_fill() {
+    // Mixed selection with a raw shape and a warped bitmap-fill drawing object: refused,
+    // leaving the document, selection and undo history untouched.
+    let mut s = Session::new(anicraft_doc::Document::default());
+    let bm = anicraft_doc::BitmapId(s.doc.alloc_id());
+    let mut rgba = Vec::with_capacity(40 * 20 * 4);
+    for y in 0..20u32 {
+        for x in 0..40u32 {
+            rgba.extend_from_slice(&[(x * 6) as u8, (y * 12) as u8, 128, 255]);
+        }
+    }
+    let png = anicraft_render::encode_png(40, 20, &rgba).unwrap_or_else(|e| panic!("encode_png: {e}"));
+    s.doc.bitmaps.push(Arc::new(anicraft_doc::Bitmap::from_png(bm, "ramp.png", png).unwrap_or_else(|| panic!("bitmap"))));
+    let bmp = id_of(&run(&mut s, "library.place", json!({"bitmap": bm.0, "x": 300, "y": 230})), "element");
+    run(&mut s, "warp.pin_add", json!({"element": bmp.0, "x": 285, "y": 230}));
+    let pin = run(&mut s, "warp.pin_add", json!({"element": bmp.0, "x": 315, "y": 230}))["pin"].as_u64().unwrap_or_else(|| panic!("pin"));
+    run(&mut s, "warp.pin_move", json!({"element": bmp.0, "pin": pin, "x": 315, "y": 270}));
+    assert!(
+        top(&s).iter().any(|e| e.id == bmp && matches!(&e.kind, ElementKind::Shape(sh) if !sh.merge && sh.warp.is_some() && matches!(sh.fill, Some(anicraft_doc::Paint::Bitmap { .. })))),
+        "placed bitmap must be a warped bitmap-fill drawing object"
+    );
+    run(&mut s, "draw.rect", json!({"x": 20, "y": 20, "w": 60, "h": 60, "fill": "#ff0000", "stroke": null, "object": false}));
+    run(&mut s, "edit.select_all", json!({}));
+    let before_doc = s.doc.clone();
+    let before_sel = s.selection.id_list();
+    let before_hist = s.history_len();
+    assert!(
+        matches!(s.execute("modify.create_object", &json!({})), Err(crate::EngineError::State(ref m)) if m.contains("warped bitmap")),
+        "warped bitmap fill in mixed selection must be refused"
+    );
+    assert_eq!(s.doc, before_doc, "document unchanged on warped bitmap refusal");
+    assert_eq!(s.selection.id_list(), before_sel, "selection unchanged on warped bitmap refusal");
+    assert_eq!(s.history_len(), before_hist, "no undo step recorded on warped bitmap refusal");
+
+    // Mixed selection with a raw shape and a warped solid-fill drawing object: still converts,
+    // preserving the bent outline.
+    let mut s = Session::new(anicraft_doc::Document::default());
+    let solid = id_of(&run(&mut s, "draw.rect", json!({"x": 100, "y": 100, "w": 200, "h": 80, "fill": "#3080ff", "stroke": null, "object": true})), "element");
+    run(&mut s, "warp.pin_add", json!({"element": solid.0, "x": 110, "y": 140}));
+    let pin = run(&mut s, "warp.pin_add", json!({"element": solid.0, "x": 290, "y": 140}))["pin"].as_u64().unwrap_or_else(|| panic!("pin"));
+    run(&mut s, "warp.pin_move", json!({"element": solid.0, "pin": pin, "x": 290, "y": 200}));
+    let bent_bounds = top(&s)[0].bounds(&s.doc);
+    assert!(bent_bounds.max.y > 180.0, "solid drawing object was bent downward: {bent_bounds:?}");
+    run(&mut s, "draw.rect", json!({"x": 10, "y": 10, "w": 50, "h": 50, "fill": "#3080ff", "stroke": null, "object": false}));
+    run(&mut s, "edit.select_all", json!({}));
+    let before_area: f64 = areas(&s).into_iter().sum();
+    let v = run(&mut s, "modify.create_object", json!({}));
+    let created: Vec<u64> = v["created"].as_array().into_iter().flatten().filter_map(Value::as_u64).collect();
+    assert_eq!(created.len(), 1, "{v}");
+    let els = top(&s);
+    assert_eq!(els.len(), 1);
+    assert!(matches!(&els[0].kind, ElementKind::Shape(sh) if !sh.merge), "warped solid + raw same fill becomes a drawing object");
+    assert_eq!(s.selection.id_list(), created);
+    assert!(els[0].bounds(&s.doc).max.y >= bent_bounds.max.y - 1.0, "bent outline kept after Create Object");
+    let after_area: f64 = areas(&s).into_iter().sum();
+    assert!((after_area - before_area).abs() < 1.0, "combined area preserved: {after_area} vs {before_area}");
+}
+
+#[test]
 fn ctrl_drag_pulls_a_sharp_corner_out_of_a_line() {
     // What the Selection tool's Ctrl-drag runs (issue #200): a point where the edge was grabbed,
     // then that point moved, in one gesture.

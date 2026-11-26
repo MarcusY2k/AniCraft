@@ -10,7 +10,7 @@
 use crate::merge::{Part, remerge_with};
 use crate::params::*;
 use crate::{CommandSpec, EngineError, Result, Session};
-use anicraft_doc::{ColorEffect, Element, ElementId, ElementKind, LayerId, MAX_GROUP_DEPTH, Shape};
+use anicraft_doc::{ColorEffect, Element, ElementId, ElementKind, LayerId, MAX_GROUP_DEPTH, Paint, Shape};
 use anicraft_geom::planar::{self, Item};
 use anicraft_geom::{Affine, FillRule, Path, Rect, Vec2};
 use serde_json::{Value, json};
@@ -336,6 +336,9 @@ fn create_object(s: &mut Session, _: &Value) -> Result<Value> {
     }
     if !shapes.iter().any(|(_, e)| crate::merge::mergeable(e).is_some()) {
         return Err(EngineError::State("the selection is drawing objects already: select raw shapes to turn into a drawing object".into()));
+    }
+    if shapes.iter().any(|(_, e)| matches!(&e.kind, ElementKind::Shape(sh) if !sh.merge && sh.warp.is_some() && matches!(sh.fill, Some(Paint::Bitmap { .. })))) {
+        return Err(EngineError::State("Create Object can't keep the warp of a warped bitmap fill: remove its warp first (Modify › Asset Warp › Remove Warp)".into()));
     }
     if shapes.len() == 1 {
         let Some((i, e)) = shapes.into_iter().next() else {
