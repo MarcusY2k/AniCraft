@@ -265,6 +265,32 @@ fn convert_points_with_handle_curves_shared_raw_edges_and_undoes() {
 }
 
 #[test]
+fn convert_points_returns_existing_ids_after_remerge() {
+    let mut s = raw_session();
+    run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 100, "h": 80, "fill": "#ff0000", "stroke": "#000000"}));
+    let corner = Vec2::new(100.0, 0.0);
+    // Default merge: true replaces touched shapes; returned ids must name the resulting elements.
+    let v = run(&mut s, "raw.convert_points", json!({"points": [[corner.x, corner.y]], "smooth": true, "handle": [25, 15]}));
+    assert_eq!(v["merged"], json!(true), "{v}");
+    let ids: Vec<u64> = v["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64).collect();
+    assert!(!ids.is_empty(), "post-merge ids should be non-empty: {v}");
+    assert_eq!(v["changed"], json!(ids.len()), "{v}");
+    let live: Vec<u64> = s.visible_elements().iter().map(|e| e.id.0).collect();
+    assert!(ids.iter().all(|id| live.contains(id)), "returned ids {ids:?} must exist in document {live:?}");
+    // Follow-up headless queries using those ids find the curved handles and select the shapes.
+    let pts = run(&mut s, "raw.points", json!({"ids": ids}));
+    assert!(!pts["handles"].as_array().is_none_or(Vec::is_empty), "raw.points on returned ids must see handles: {pts}");
+    run(&mut s, "element.select", json!({"ids": ids}));
+    assert_eq!(s.selection.len(), ids.len(), "element.select accepts every returned id");
+    // With merge: false, edited shapes are kept in place and returned ids also exist.
+    let v2 = run(&mut s, "raw.convert_points", json!({"points": [[corner.x, corner.y]], "smooth": true, "handle": [10, 5], "merge": false}));
+    assert_eq!(v2["merged"], json!(false), "{v2}");
+    let ids2: Vec<u64> = v2["ids"].as_array().into_iter().flatten().filter_map(Value::as_u64).collect();
+    let live2: Vec<u64> = s.visible_elements().iter().map(|e| e.id.0).collect();
+    assert!(!ids2.is_empty() && ids2.iter().all(|id| live2.contains(id)), "merge:false ids {ids2:?} must exist in {live2:?}");
+}
+
+#[test]
 fn drawing_snaps_to_anchors_then_lines_while_snap_to_objects_is_on() {
     let mut s = raw_session();
     run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 100, "h": 80, "fill": "#ff0000", "stroke": "#000000"}));

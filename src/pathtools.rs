@@ -667,7 +667,13 @@ pub fn subselect_drag_start(app: &mut App, press: Pos2, shift: bool, alt: bool, 
 /// Updates an anchor's curve handles while Alt-dragging from it with Subselection. Returns the
 /// raw element ids changed (for merging on release), if any.
 pub fn pull_handle(app: &mut App, target: PullTarget, anchor: Vec2, moved: &mut bool, cur: Vec2, shift: bool, xf: Xf) -> Option<serde_json::Value> {
-    let h = drag_handle(anchor, cur, xf.zoom, shift)?;
+    let h = if *moved {
+        let q = if shift { constrain_45(anchor, cur) } else { cur };
+        let d = q - anchor;
+        (d.is_finite() && d != Vec2::ZERO).then_some(d)?
+    } else {
+        drag_handle(anchor, cur, xf.zoom, shift)?
+    };
     *moved = true;
     match target {
         PullTarget::Object { id, cmd } => {
@@ -1785,6 +1791,62 @@ mod tests {
             // One undo restores the whole drag.
             obj_app.run("edit.undo", json!({}));
             assert_eq!(path_of(&obj_app), before, "one undo restores the drawing object");
+        }
+
+        #[test]
+        fn pull_handle_updates_below_drag_threshold_after_pull_starts() {
+            // Drawing object: sub-threshold press stays unchanged, then once pulled past DRAG_MIN,
+            // moving back within DRAG_MIN still updates the handle instead of keeping the old one.
+            let ctx = egui::Context::default();
+            let session = anicraft_engine::Session::new(anicraft_engine::doc::Document::default());
+            let mut obj_app = App::with_context(&ctx, session, Some(std::path::PathBuf::from("unused.png")));
+            obj_app.tool = Tool::Subselect;
+            obj_app.view.zoom = 1.0;
+            obj_app.run("draw.rect", json!({"x": 0, "y": 0, "w": 100, "h": 80, "object": true}));
+            let id = obj_app.s.selection.ids().next().unwrap();
+            let path_of = |a: &App| -> Path {
+                let el = a.s.visible_elements().into_iter().find(|e| e.id == id).unwrap();
+                let ElementKind::Shape(sh) = &el.kind else { panic!() };
+                sh.path.transformed(&el.transform)
+            };
+            let before = path_of(&obj_app);
+            let Drag::PullHandle { target, anchor, mut moved } = subselect_drag_start(&mut obj_app, pos2(100.0, 0.0), false, true, XF) else {
+                panic!("expected PullHandle on object anchor");
+            };
+            // Initial sub-threshold movement leaves geometry unchanged.
+            pull_handle(&mut obj_app, target, anchor, &mut moved, anchor + Vec2::new(1.0, 0.0), false, XF);
+            assert!(!moved);
+            assert_eq!(path_of(&obj_app), before);
+            // Pull past threshold creates a long handle.
+            pull_handle(&mut obj_app, target, anchor, &mut moved, anchor + Vec2::new(30.0, 20.0), false, XF);
+            assert!(moved);
+            let long = path_of(&obj_app).point(2, C1).unwrap().distance(anchor);
+            assert!(long > 20.0, "expected long handle, got {long}");
+            // Moving back to a nonzero sub-threshold offset updates the handle instead of leaving it long.
+            pull_handle(&mut obj_app, target, anchor, &mut moved, anchor + Vec2::new(1.0, 0.0), false, XF);
+            obj_app.s.end_gesture();
+            let short = path_of(&obj_app).point(2, C1).unwrap().distance(anchor);
+            assert!(short < DRAG_MIN && short > 0.5, "handle should shrink below threshold: {short} (was {long})");
+
+            // Same for a raw rectangle: moving back within DRAG_MIN updates raw handles too.
+            let (mut raw_app, _) = app_and_ctx();
+            subselect_click(&mut raw_app, pos2(50.0, 0.0), false, XF);
+            let Drag::PullHandle { target, anchor, mut moved } = subselect_drag_start(&mut raw_app, pos2(100.0, 0.0), false, true, XF) else {
+                panic!("expected PullHandle on raw anchor");
+            };
+            assert!(pull_handle(&mut raw_app, target, anchor, &mut moved, anchor + Vec2::new(1.0, 0.0), false, XF).is_none());
+            assert!(!moved);
+            assert!(pull_handle(&mut raw_app, target, anchor, &mut moved, anchor + Vec2::new(30.0, 20.0), false, XF).is_some());
+            assert!(moved);
+            let ids = pull_handle(&mut raw_app, target, anchor, &mut moved, anchor + Vec2::new(1.0, 0.0), false, XF);
+            assert!(ids.is_some(), "established raw pull must still update below DRAG_MIN");
+            if let Some(ids) = ids {
+                raw_app.run("raw.merge", json!({"ids": ids}));
+            }
+            raw_app.s.end_gesture();
+            let hs: Vec<_> = raw_shown(&raw_app).handles.into_iter().filter(|h| h.anchor.distance(anchor) < 0.3).collect();
+            assert_eq!(hs.len(), 2, "{hs:?}");
+            assert!(hs.iter().all(|h| h.at.distance(anchor) < DRAG_MIN && h.at.distance(anchor) > 0.5), "raw handles should reflect sub-threshold update: {hs:?}");
         }
     }
 

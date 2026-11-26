@@ -306,7 +306,7 @@ impl Path {
     fn close_subpath_explicitly(&mut self, cmd: usize) {
         let Some(m) = self.subpath_start(cmd) else { return };
         let Some(PathCmd::MoveTo(start)) = self.cmds.get(m).copied() else { return };
-        let Some(end) = (m + 1..self.cmds.len()).find(|&j| !self.is_segment(j)) else { return };
+        let Some(end) = (cmd + 1..self.cmds.len()).find(|&j| !self.is_segment(j)) else { return };
         if !matches!(self.cmds.get(end), Some(PathCmd::Close)) {
             return;
         }
@@ -750,6 +750,26 @@ mod tests {
         assert!((i - a).dot(o - a) < 0.0, "on opposite sides");
         assert!(p.make_corner(1));
         assert_eq!(p.point(1, C2), Some(a));
+    }
+
+    #[test]
+    fn set_smooth_handles_on_segment_after_close_does_not_shift_command() {
+        // Segment after an earlier Close: closing the earlier subpath would shift cmd 3 to 4.
+        let mut p = Path::new();
+        p.move_to(Vec2::new(0.0, 0.0)).line_to(Vec2::new(100.0, 0.0)).close().line_to(Vec2::new(100.0, 100.0));
+        let h = Vec2::new(15.0, 5.0);
+        assert!(p.set_smooth_handles(3, h));
+        assert_eq!(p.point(3, ANCHOR), Some(Vec2::new(100.0, 100.0)), "cmd 3 must not shift");
+        assert_eq!(p.segment_start(3), Some(Vec2::new(0.0, 0.0)));
+        assert_eq!(p.point(3, C2), Some(Vec2::new(100.0, 100.0) - h));
+        // When followed by its own Close, the closing edge after cmd is made explicit without shifting cmd.
+        let mut q = Path::new();
+        q.move_to(Vec2::new(0.0, 0.0)).line_to(Vec2::new(100.0, 0.0)).close().line_to(Vec2::new(100.0, 100.0)).close();
+        assert!(q.set_smooth_handles(3, h));
+        let a = Vec2::new(100.0, 100.0);
+        assert_eq!(q.point(3, ANCHOR), Some(a));
+        assert_eq!(q.point(3, C2), Some(a - h));
+        assert_eq!(q.point(4, C1), Some(a + h));
     }
 
     #[test]

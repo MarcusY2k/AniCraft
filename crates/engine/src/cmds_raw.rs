@@ -745,23 +745,33 @@ fn merge_cmd(s: &mut Session, p: &Value) -> Result<Value> {
 /// Merges the raw shapes `ids` again with the raw shapes they touch, keeping their stacking (an
 /// edit changed them in place). Selected shapes' pieces stay selected.
 pub(crate) fn remerge_in_place(s: &mut Session, ids: &[ElementId]) -> Result<()> {
+    remerge_in_place_ids(s, ids).map(|_| ())
+}
+
+/// [`remerge_in_place`], returning the replacement element ids from `ids` when a merge happened
+/// (`None` when nothing merged or the merge declined, so `ids` stayed as edited).
+pub(crate) fn remerge_in_place_ids(s: &mut Session, ids: &[ElementId]) -> Result<Option<Vec<ElementId>>> {
     if ids.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     let kf = s.editable_keyframe()?;
     let existing = kf.elements.clone();
     let area = existing.iter().filter(|e| ids.contains(&e.id)).filter_map(|e| mergeable(e).map(|sh| reach(sh, &e.transform))).fold(Rect::EMPTY, |r, b| r.union(&b));
     if area.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     let touching: Vec<usize> = existing.iter().enumerate().filter(|(_, e)| mergeable(e).is_some_and(|sh| !reach(sh, &e.transform).intersect(&area).is_empty())).map(|(i, _)| i).collect();
     let here = s.layer;
     let parts: Vec<Part> = touching.iter().filter_map(|&i| existing.get(i)).map(|e| Part::Shape(e.as_ref(), s.selection.contains(here, e.id))).collect();
     // Too much to merge at once: the shapes stay as edited.
-    let Some((out, picked)) = merge::remerge(s, &parts) else { return Ok(()) };
+    let Some(rm) = merge::remerge_with(s, &parts, None) else { return Ok(None) };
     let gone: Vec<ElementId> = touching.iter().filter_map(|&i| existing.get(i)).map(|e| e.id).collect();
-    merge::replace(s, &touching, out, false)?;
+    let mut mapped: Vec<ElementId> = rm.from.iter().filter_map(|&(piece, part)| gone.get(part).filter(|id| ids.contains(id)).map(|_| piece)).collect();
+    if mapped.is_empty() {
+        mapped = rm.out.iter().map(|e| e.id).collect();
+    }
+    merge::replace(s, &touching, rm.out, false)?;
     s.selection.retain(|l, id| l != here || !gone.contains(&id));
-    s.selection.extend_on(here, picked);
-    Ok(())
+    s.selection.extend_on(here, rm.picked);
+    Ok(Some(mapped))
 }

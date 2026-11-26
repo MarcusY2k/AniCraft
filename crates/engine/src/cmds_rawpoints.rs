@@ -6,7 +6,7 @@
 //! copy alike: an added point is added to every shape with that edge; a deleted one is joined
 //! across in every shape that has it, so the drawing stays connected.
 
-use crate::cmds_raw::{activate_layer_at, check_extent, follow_edge, positions_param, remerge_in_place, snap_drawn};
+use crate::cmds_raw::{activate_layer_at, check_extent, follow_edge, positions_param, remerge_in_place, remerge_in_place_ids, snap_drawn};
 use crate::merge::{mergeable, reach};
 use crate::params::*;
 use crate::{CommandSpec, EngineError, Result, Session};
@@ -43,7 +43,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Convert Anchor Points",
             "",
             None,
-            "{points: [[x, y], ..], smooth: bool, handle?: [dx, dy], merge?: bool} makes the raw anchors at those positions smooth (their handles in one line; with handle, mirrored at anchor ± (dx, dy)) or corners (handles drawn in), in every shape that has them, and merges again (unless merge is false)",
+            "{points: [[x, y], ..], smooth: bool, handle?: [dx, dy], merge?: bool} makes the raw anchors at those positions smooth (their handles in one line; with handle, mirrored at anchor ± (dx, dy)) or corners (handles drawn in), in every shape that has them, and merges again (unless merge is false); returns {converted, changed, ids (the resulting element ids after any merge), merged}",
             true,
             convert_points,
         ),
@@ -251,10 +251,15 @@ fn convert_points(s: &mut Session, p: &Value) -> Result<Value> {
             }
         }
     }
-    if merge_after {
-        remerge_in_place(s, &changed)?;
-    }
-    Ok(json!({"converted": converted, "changed": changed.len(), "ids": changed.iter().map(|e| e.0).collect::<Vec<_>>(), "merged": merge_after}))
+    let (ids, merged) = if merge_after {
+        match remerge_in_place_ids(s, &changed)? {
+            Some(mapped) => (mapped, true),
+            None => (changed, false),
+        }
+    } else {
+        (changed, false)
+    };
+    Ok(json!({"converted": converted, "changed": ids.len(), "ids": ids.iter().map(|e| e.0).collect::<Vec<_>>(), "merged": merged}))
 }
 
 // ----- snapping while drawing --------------------------------------------------------------------
