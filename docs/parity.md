@@ -30,7 +30,7 @@ AniCraft is an independent, open-source project, and is not affiliated with or e
 |---|---|---|---|---|
 | Workspace and panels | 23 | 5 | 4 | 2 |
 | Tools | 19 | 7 | 7 | 1 |
-| Drawing model | 16 | 3 | 4 | 0 |
+| Drawing model | 16 | 4 | 3 | 0 |
 | Colour | 8 | 1 | 2 | 2 |
 | Text | 8 | 5 | 5 | 2 |
 | Symbols and Library | 13 | 3 | 4 | 0 |
@@ -49,7 +49,7 @@ AniCraft is an independent, open-source project, and is not affiliated with or e
 | Accessibility | 4 | 2 | 1 | 0 |
 | Preferences and shortcuts | 6 | 2 | 0 | 1 |
 | Automation | 4 | 2 | 1 | 1 |
-| **All** | **198** | **53** | **70** | **27** |
+| **All** | **198** | **54** | **69** | **27** |
 
 The counts are of the rows below, so they weigh a small feature like a large one. The backlog,
 not this table, says what matters most.

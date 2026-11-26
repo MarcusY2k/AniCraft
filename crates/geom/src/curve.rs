@@ -91,7 +91,7 @@ impl Subpath {
                 }
             }
         }
-        if r.is_empty() { 0.0 } else { r.width().hypot(r.height()) }
+        if r.min.is_finite() && r.max.is_finite() && r.min.x <= r.max.x && r.min.y <= r.max.y { r.width().hypot(r.height()) } else { 0.0 }
     }
 
     fn cubic_count(&self) -> usize {
@@ -264,13 +264,7 @@ fn optimize_subpath(sub: &Subpath, tolerance: f32) -> Subpath {
     if pts.len() > MAX_SUBPATH_POINTS {
         pts = simplify(&pts, (tolerance * 0.05).max(1e-3));
         if pts.len() > MAX_SUBPATH_POINTS {
-            let step = pts.len().div_ceil(MAX_SUBPATH_POINTS).max(2);
-            let last = pts[pts.len() - 1];
-            let mut thin: Vec<Vec2> = pts.iter().step_by(step).copied().collect();
-            if thin.last().is_none_or(|p| p.distance(last) > LINK_EPS) {
-                thin.push(last);
-            }
-            pts = thin;
+            return Subpath { start: sub.start, segs: sub.segs.clone(), closed: sub.closed };
         }
     }
     // Perimeter determines a corner window that won't walk past short polygon edges.
@@ -300,9 +294,16 @@ fn optimize_subpath(sub: &Subpath, tolerance: f32) -> Subpath {
         }
     }
     cand.closed = sub.closed;
+    let orig_end = sub.segs.last().map(|seg| match *seg {
+        Seg::Line(_, p) | Seg::Cubic([_, _, _, p]) => p,
+    });
+    let cand_end = cand.segs.last().map(|seg| match *seg {
+        Seg::Line(_, p) | Seg::Cubic([_, _, _, p]) => p,
+    });
+    let ends_kept = sub.closed || (cand.start == sub.start && cand_end == orig_end);
     let orig_segs = sub.segs.len();
     let new_segs = cand.segs.len();
-    let simpler = new_segs > 0 && (new_segs < orig_segs || (new_segs == orig_segs && cand.cubic_count() < sub.cubic_count()));
+    let simpler = ends_kept && new_segs > 0 && (new_segs < orig_segs || (new_segs == orig_segs && cand.cubic_count() < sub.cubic_count()));
     if simpler { cand } else { Subpath { start: sub.start, segs: sub.segs.clone(), closed: sub.closed } }
 }
 
@@ -350,14 +351,16 @@ fn smooth_subpath(sub: &Subpath, s: f32) -> Subpath {
     if !sub.closed {
         anchors.push(cubics[m - 1][3]);
     }
-    // 1. Move each interior (or closed) anchor toward the average of its neighbours.
+    // 1. Move each interior (or closed, for 3+ anchors) anchor toward the average of its neighbours.
     let w = 0.5 * s;
     let mut moved = anchors.clone();
     if sub.closed {
-        for i in 0..n {
-            let prev = anchors[(i + n - 1) % n];
-            let next = anchors[(i + 1) % n];
-            moved[i] = anchors[i].lerp((prev + next) * 0.5, w);
+        if n > 2 {
+            for i in 0..n {
+                let prev = anchors[(i + n - 1) % n];
+                let next = anchors[(i + 1) % n];
+                moved[i] = anchors[i].lerp((prev + next) * 0.5, w);
+            }
         }
     } else {
         for i in 1..n - 1 {
@@ -373,19 +376,32 @@ fn smooth_subpath(sub: &Subpath, s: f32) -> Subpath {
         let (a0, a1) = (moved[i], moved[j]);
         let carried_c1 = cubics[i][1] + (a0 - anchors[i]);
         let carried_c2 = cubics[i][2] + (a1 - anchors[j]);
-        let target_c1 = if sub.closed || (i > 0 && i + 1 < n) {
-            let prev = moved[(i + n - 1) % n];
-            let dir = (a1 - prev).normalized();
-            if dir != Vec2::ZERO { a0 + dir * (a0.distance(a1) / 3.0) } else { a0.lerp(a1, 1.0 / 3.0) }
+        let (target_c1, target_c2) = if sub.closed && n == 2 {
+            let out0 = cubics[i][1] - anchors[i];
+            let in0 = cubics[j][2] - anchors[i];
+            let dir0 = (out0 - in0).normalized();
+            let tc1 = if dir0 != Vec2::ZERO { a0 + dir0 * out0.length() } else { carried_c1 };
+            let in1 = cubics[i][2] - anchors[j];
+            let out1 = cubics[j][1] - anchors[j];
+            let dir1 = (out1 - in1).normalized();
+            let tc2 = if dir1 != Vec2::ZERO { a1 - dir1 * in1.length() } else { carried_c2 };
+            (tc1, tc2)
         } else {
-            a0.lerp(a1, 1.0 / 3.0)
-        };
-        let target_c2 = if sub.closed || (j > 0 && j + 1 < n) {
-            let next = moved[(j + 1) % n];
-            let dir = (next - a0).normalized();
-            if dir != Vec2::ZERO { a1 - dir * (a1.distance(a0) / 3.0) } else { a0.lerp(a1, 2.0 / 3.0) }
-        } else {
-            a0.lerp(a1, 2.0 / 3.0)
+            let tc1 = if sub.closed || (i > 0 && i + 1 < n) {
+                let prev = moved[(i + n - 1) % n];
+                let dir = (a1 - prev).normalized();
+                if dir != Vec2::ZERO { a0 + dir * (a0.distance(a1) / 3.0) } else { a0.lerp(a1, 1.0 / 3.0) }
+            } else {
+                a0.lerp(a1, 1.0 / 3.0)
+            };
+            let tc2 = if sub.closed || (j > 0 && j + 1 < n) {
+                let next = moved[(j + 1) % n];
+                let dir = (next - a0).normalized();
+                if dir != Vec2::ZERO { a1 - dir * (a1.distance(a0) / 3.0) } else { a0.lerp(a1, 2.0 / 3.0) }
+            } else {
+                a0.lerp(a1, 2.0 / 3.0)
+            };
+            (tc1, tc2)
         };
         let c1 = carried_c1.lerp(target_c1, s);
         let c2 = carried_c2.lerp(target_c2, s);
@@ -422,7 +438,15 @@ fn smooth_subpath(sub: &Subpath, s: f32) -> Subpath {
     }
     let start = merged.first().map_or(sub.start, |c| c[0]);
     let segs = merged.into_iter().map(Seg::from_cubic).collect();
-    Subpath { start, segs, closed: sub.closed }
+    let cand = Subpath { start, segs, closed: sub.closed };
+    if sub.closed {
+        let collapsed = (cand.bounds_diag() <= LINK_EPS && sub.bounds_diag() > LINK_EPS)
+            || (cand.cubic_count() == 0 && cand.segs.len() < 3 && (sub.cubic_count() > 0 || sub.segs.len() >= 3));
+        if collapsed {
+            return Subpath { start: sub.start, segs: sub.segs.clone(), closed: true };
+        }
+    }
+    cand
 }
 
 /// Straightens `path` (`strength` in `0.0..=1.0`): curved segments whose deviation from their
@@ -455,6 +479,10 @@ fn straighten_subpath(sub: &Subpath, s: f32) -> Subpath {
             Seg::Line(a, b) => segs.push(Seg::Line(a, b)),
             Seg::Cubic(c @ [p0, c1, c2, p3]) => {
                 let chord = p0.distance(p3);
+                if chord <= LINK_EPS {
+                    segs.push(Seg::from_cubic(c));
+                    continue;
+                }
                 let thresh = (chord * 0.12 * s).max(4.0 * s);
                 if cubic_chord_deviation(&c) <= thresh {
                     segs.push(Seg::Line(p0, p3));
@@ -689,5 +717,91 @@ mod tests {
         assert!(optimize(&empty, 1.0).is_empty());
         assert!(smooth(&empty, 0.5).is_empty());
         assert!(straighten(&empty, 0.5).is_empty());
+    }
+
+    #[test]
+    fn straighten_simplifies_flat_collinear_line_runs() {
+        let mut horiz = Path::new();
+        horiz.move_to(Vec2::new(0.0, 0.0)).line_to(Vec2::new(50.0, 0.0)).line_to(Vec2::new(100.0, 0.0));
+        let out_h = straighten(&horiz, 0.5);
+        assert_eq!(seg_count(&out_h), 1, "redundant midpoint removed on horizontal run: {:?}", out_h.cmds);
+        assert_eq!(out_h.anchors().first().map(|a| a.1), Some(Vec2::new(0.0, 0.0)));
+        assert_eq!(out_h.anchors().last().map(|a| a.1), Some(Vec2::new(100.0, 0.0)));
+
+        let mut vert = Path::new();
+        vert.move_to(Vec2::new(10.0, 0.0)).line_to(Vec2::new(10.0, 50.0)).line_to(Vec2::new(10.0, 100.0));
+        let out_v = straighten(&vert, 0.5);
+        assert_eq!(seg_count(&out_v), 1, "redundant midpoint removed on vertical run: {:?}", out_v.cmds);
+    }
+
+    #[test]
+    fn optimize_does_not_discard_peaks_above_tolerance_on_long_subpath() {
+        let mut zig = Path::new();
+        let n = 32_767usize;
+        let mut peaks = Vec::new();
+        for i in 0..n {
+            let y = if i % 2 == 1 { 20.0 } else { 0.0 };
+            let pt = Vec2::new(i as f32, y);
+            if i == 0 {
+                zig.move_to(pt);
+            } else {
+                zig.line_to(pt);
+            }
+            if i % 2 == 1 && peaks.len() < 64 {
+                peaks.push(pt);
+            }
+        }
+        let tol = 2.05;
+        let out = optimize(&zig, tol);
+        let err = max_dist_to_path(&peaks, &out);
+        assert!(err <= tol + 0.1, "peaks stay within tolerance: {err}");
+        assert!(seg_count(&out) > 1, "zigzag did not collapse to a baseline");
+    }
+
+    #[test]
+    fn optimize_keeps_open_endpoints_fixed_with_tiny_end_segment() {
+        let mut p = Path::new();
+        let end = Vec2::new(10.00005, 0.0);
+        p.move_to(Vec2::new(0.0, 0.0)).line_to(Vec2::new(10.0, 0.0)).line_to(end);
+        let out = optimize(&p, 2.05);
+        let anchors = out.anchors();
+        assert_eq!(anchors.first().map(|a| a.1), Some(Vec2::new(0.0, 0.0)));
+        assert_eq!(anchors.last().map(|a| a.1), Some(end), "open endpoint must not move: {:?}", out.cmds);
+    }
+
+    #[test]
+    fn smooth_does_not_collapse_closed_two_anchor_loop() {
+        let mut loop2 = Path::new();
+        loop2
+            .move_to(Vec2::new(0.0, 0.0))
+            .cubic_to(Vec2::new(0.0, 80.0), Vec2::new(80.0, 80.0), Vec2::new(80.0, 0.0))
+            .cubic_to(Vec2::new(80.0, -80.0), Vec2::new(0.0, -80.0), Vec2::new(0.0, 0.0))
+            .close();
+        let out = smooth(&loop2, 1.0);
+        assert!(matches!(out.cmds.last(), Some(PathCmd::Close)), "stays closed: {:?}", out.cmds);
+        let pls = out.flatten(&Affine::IDENTITY, 0.25);
+        let mut b = Rect::EMPTY;
+        for pl in &pls {
+            for &pt in &pl.points {
+                b.include(pt);
+            }
+        }
+        assert!(b.width() > 40.0 && b.height() > 40.0, "two-anchor loop kept its fill area: {b:?}, cmds={:?}", out.cmds);
+    }
+
+    #[test]
+    fn straighten_keeps_visible_zero_chord_cubic_loop() {
+        let mut teardrop = Path::new();
+        teardrop.move_to(Vec2::new(0.0, 0.0)).cubic_to(Vec2::new(3.0, 0.0), Vec2::new(0.0, 3.0), Vec2::new(0.0, 0.0)).close();
+        let out = straighten(&teardrop, 0.5);
+        assert!(out.cmds.iter().any(|c| matches!(c, PathCmd::CubicTo(..))), "nondegenerate zero-chord loop kept as cubic: {:?}", out.cmds);
+        let pls = out.flatten(&Affine::IDENTITY, 0.05);
+        let mut b = Rect::EMPTY;
+        for pl in &pls {
+            for &pt in &pl.points {
+                b.include(pt);
+            }
+        }
+        assert!(b.width() > 0.5 && b.height() > 0.5, "loop stays visible: {b:?}");
     }
 }

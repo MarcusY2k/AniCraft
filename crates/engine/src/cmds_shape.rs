@@ -11,7 +11,7 @@
 //! were. Raw shapes are merged again with the drawing they are part of (ADR 0031); drawing
 //! objects stay objects.
 
-use crate::cmds_raw::{check_extent, remerge_in_place};
+use crate::cmds_raw::{check_extent, remerge_in_place, remerge_in_place_mapped};
 use crate::cmds_width::id_param;
 use crate::params::*;
 use crate::{CommandSpec, EngineError, Result, Session};
@@ -351,8 +351,9 @@ fn strength_param(p: &Value, min: f32) -> Result<f32> {
 
 /// Runs a stage-space path clean-up over the target shapes (`id`, else the selection on the active
 /// layer). Shapes that cannot change are left as they are (no error); raw shapes that do change
-/// merge again with the drawing. Returns `(changed, before_points, after_points)`.
-fn rewrite_paths(s: &mut Session, p: &Value, nothing: &str, mut op: impl FnMut(&Path) -> Path) -> Result<(usize, usize, usize)> {
+/// merge again with the drawing. When `noop` is true, validates the selection and returns equal
+/// point counts without charging the shape budget. Returns `(changed, before_points, after_points)`.
+fn rewrite_paths(s: &mut Session, p: &Value, nothing: &str, noop: bool, mut op: impl FnMut(&Path) -> Path) -> Result<(usize, usize, usize)> {
     let ids: Vec<ElementId> = match id_param(p)? {
         Some(id) => vec![id],
         None => s.selection.on(s.layer),
@@ -367,6 +368,17 @@ fn rewrite_paths(s: &mut Session, p: &Value, nothing: &str, mut op: impl FnMut(&
     }
     if !visible.iter().any(|e| ids.contains(&e.id) && matches!(e.kind, ElementKind::Shape(_))) {
         return Err(EngineError::State(nothing.into()));
+    }
+    if noop {
+        let pts: usize = visible
+            .iter()
+            .filter(|e| ids.contains(&e.id))
+            .filter_map(|e| match &e.kind {
+                ElementKind::Shape(sh) => Some(sh.path.editable_anchors().len()),
+                _ => None,
+            })
+            .sum();
+        return Ok((0, pts, pts));
     }
     let mut budget = MAX_OUTLINES;
     let mut changed = 0usize;
@@ -420,19 +432,33 @@ fn rewrite_paths(s: &mut Session, p: &Value, nothing: &str, mut op: impl FnMut(&
         }
     }
     s.editable_keyframe()?.elements = out;
-    remerge_in_place(s, &raw)?;
+    if !raw.is_empty() {
+        let map = remerge_in_place_mapped(s, &raw)?;
+        let mut committed: Vec<ElementId> = ids.iter().copied().filter(|id| !map.gone.contains(id)).collect();
+        committed.extend(map.from.iter().filter(|(_, src)| ids.contains(src)).map(|(piece, _)| *piece));
+        after_pts = s
+            .editable_keyframe()?
+            .elements
+            .iter()
+            .filter(|e| committed.contains(&e.id))
+            .filter_map(|e| match &e.kind {
+                ElementKind::Shape(sh) => Some(sh.path.editable_anchors().len()),
+                _ => None,
+            })
+            .sum();
+    }
     Ok((changed, before_pts, after_pts))
 }
 
 fn smooth_cmd(s: &mut Session, p: &Value) -> Result<Value> {
     let strength = strength_param(p, 1.0)? / 100.0;
-    let (changed, _, _) = rewrite_paths(s, p, "the selection has no shapes to smooth (select lines or fills, or break a symbol apart)", |path| curve::smooth(path, strength))?;
+    let (changed, _, _) = rewrite_paths(s, p, "the selection has no shapes to smooth (select lines or fills, or break a symbol apart)", false, |path| curve::smooth(path, strength))?;
     Ok(json!({"changed": changed}))
 }
 
 fn straighten_cmd(s: &mut Session, p: &Value) -> Result<Value> {
     let strength = strength_param(p, 1.0)? / 100.0;
-    let (changed, _, _) = rewrite_paths(s, p, "the selection has no shapes to straighten (select lines or fills, or break a symbol apart)", |path| curve::straighten(path, strength))?;
+    let (changed, _, _) = rewrite_paths(s, p, "the selection has no shapes to straighten (select lines or fills, or break a symbol apart)", false, |path| curve::straighten(path, strength))?;
     Ok(json!({"changed": changed}))
 }
 
@@ -440,10 +466,7 @@ fn optimize_cmd(s: &mut Session, p: &Value) -> Result<Value> {
     let strength = strength_param(p, 0.0)?;
     let repeat = opt_bool(p, "repeat")?.unwrap_or(false);
     let tol = optimize_tolerance(strength);
-    let (_, before, after) = rewrite_paths(s, p, "the selection has no shapes to optimize (select lines or fills, or break a symbol apart)", |path| {
-        if tol <= 0.0 {
-            return path.clone();
-        }
+    let (_, before, after) = rewrite_paths(s, p, "the selection has no shapes to optimize (select lines or fills, or break a symbol apart)", tol <= 0.0, |path| {
         let mut cur = curve::optimize(path, tol);
         if repeat {
             for _ in 1..MAX_OPTIMIZE_PASSES {

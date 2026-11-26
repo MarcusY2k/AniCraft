@@ -3,7 +3,7 @@
 //! step. What was entered last is offered again (view state), so a run of shapes gets the same
 //! settings.
 
-use crate::a11y::{Named, SliderLook, slider};
+use crate::a11y::{Named, SliderLook, slider_parts};
 use crate::app::App;
 use crate::theme::{FORM_LABEL_DIALOG, Type, form_row, text, with_type};
 use anicraft_engine::cmds_shape::{DEFAULT_STEPS, DEFAULT_STRENGTH, MAX_DISTANCE};
@@ -118,15 +118,17 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
         ui.set_min_width(340.0);
         if d.kind == Kind::Optimize {
             form_row(ui, FORM_LABEL_DIALOG, tr!("Strength"), |ui| {
-                let r = with_type(ui, Type::Data, |ui| {
-                    slider(ui, &mut d.optimize.strength, 0.0..=100.0, tr!("Strength"), SliderLook { suffix: " %", max_decimals: Some(0), step: Some(1.0), logarithmic: false })
-                })
-                .on_hover_text(tr!("Higher values drop more points and allow curves to move slightly further from the original"));
+                let (bar, num) = with_type(ui, Type::Data, |ui| {
+                    slider_parts(ui, &mut d.optimize.strength, 0.0..=100.0, tr!("Strength"), SliderLook { suffix: " %", max_decimals: Some(0), step: Some(1.0), logarithmic: false })
+                });
+                let r = bar
+                    .union(num.clone())
+                    .on_hover_text(tr!("Higher values drop more points and allow curves to move slightly further from the original"));
                 if d.focus {
                     r.request_focus();
                     d.focus = false;
                 }
-                if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                if num.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                     submit = true;
                 }
             });
@@ -299,15 +301,21 @@ mod tests {
         app.run("draw.path", json!({"d": p.to_svg(), "fill": "#3366cc", "stroke": null, "object": true}));
         open(&mut app, Kind::Optimize);
         let before = app.s.doc.clone();
-        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| window(&mut app, ui.ctx()));
-        out.textures_delta.clear();
-        assert_eq!(app.s.doc, before, "drawing the dialog changes nothing");
-        if let Some(tree) = out.platform_output.accesskit_update {
-            let labels: Vec<&str> = tree.nodes.iter().filter_map(|(_, n)| n.label()).collect();
-            assert!(labels.contains(&"Strength"), "slider named: {labels:?}");
-            assert!(labels.contains(&"Multiple passes"), "checkbox named: {labels:?}");
-            assert!(labels.contains(&"OK") && labels.contains(&"Cancel"), "buttons named: {labels:?}");
+        let mut tree = None;
+        for _ in 0..4 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| window(&mut app, ui.ctx()));
+            out.textures_delta.clear();
+            if let Some(update) = out.platform_output.accesskit_update {
+                tree = Some(update);
+                break;
+            }
         }
+        assert_eq!(app.s.doc, before, "drawing the dialog changes nothing");
+        let tree = tree.expect("AccessKit update arrived for Optimize Curves dialog");
+        let labels: Vec<&str> = tree.nodes.iter().filter_map(|(_, n)| n.label()).collect();
+        assert!(labels.contains(&"Strength"), "slider named: {labels:?}");
+        assert!(labels.contains(&"Multiple passes"), "checkbox named: {labels:?}");
+        assert!(labels.contains(&"OK") && labels.contains(&"Cancel"), "buttons named: {labels:?}");
         let d = app.shape_dialog.as_mut().expect("dialog is open");
         assert_eq!(d.optimize, OptimizeValues::default());
         d.optimize = OptimizeValues { strength: 75.0, repeat: true };
@@ -316,5 +324,52 @@ mod tests {
         assert_eq!(app.s.undo_label(), Some("Optimize Curves…"));
         assert_eq!(app.shape_last.optimize, OptimizeValues { strength: 75.0, repeat: true });
         assert_eq!(optimize_params(&OptimizeValues { strength: 150.0, repeat: false }), json!({"strength": 100.0f32, "repeat": false}));
+    }
+
+    #[test]
+    fn optimize_dialog_submits_on_enter_in_numeric_strength_field() {
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut app = app(&ctx);
+        open(&mut app, Kind::Optimize);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let frame_input = || egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        let mut tree = None;
+        for _ in 0..3 {
+            let mut out = ctx.run_ui(frame_input(), |ui| window(&mut app, ui.ctx()));
+            out.textures_delta.clear();
+            if let Some(update) = out.platform_output.accesskit_update {
+                tree = Some(update);
+            }
+        }
+        let tree = tree.expect("AccessKit update arrived");
+        // Find the numeric Strength DragValue (named "Strength", not the Slider bar).
+        let num_rect = tree
+            .nodes
+            .iter()
+            .filter_map(|(_, n)| (n.label() == Some("Strength") && n.role() != egui::accesskit::Role::Slider).then(|| n.bounds()).flatten())
+            .next()
+            .expect("numeric Strength field in AccessKit tree");
+        let pos = egui::pos2(((num_rect.x0 + num_rect.x1) * 0.5) as f32, ((num_rect.y0 + num_rect.y1) * 0.5) as f32);
+        // Click the numeric field to enter text editing, type a new value, then press Enter.
+        for pressed in [true, false] {
+            let mut inp = frame_input();
+            inp.events.push(egui::Event::PointerMoved(pos));
+            inp.events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE });
+            let mut out = ctx.run_ui(inp, |ui| window(&mut app, ui.ctx()));
+            out.textures_delta.clear();
+        }
+        // Let focus settle on the numeric field and type a new value before pressing Enter.
+        let mut type_inp = frame_input();
+        type_inp.events.push(egui::Event::Text("75".into()));
+        let mut out = ctx.run_ui(type_inp, |ui| window(&mut app, ui.ctx()));
+        out.textures_delta.clear();
+        assert!(app.shape_dialog.is_some(), "dialog stays open while typing");
+        let mut enter = frame_input();
+        enter.events.push(egui::Event::Key { key: Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE });
+        let mut out = ctx.run_ui(enter, |ui| window(&mut app, ui.ctx()));
+        out.textures_delta.clear();
+        assert!(app.shape_dialog.is_none(), "pressing Enter in the numeric Strength field submits the dialog");
+        assert_eq!(app.shape_last.optimize.strength, 75.0);
     }
 }

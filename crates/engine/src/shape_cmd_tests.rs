@@ -685,3 +685,63 @@ fn curve_commands_check_params_and_leave_unchangeable_shapes_alone() {
         assert!(s.execute("modify.optimize", &bad).is_err(), "optimize {bad}");
     }
 }
+
+#[test]
+fn optimize_at_zero_strength_does_not_charge_shape_budget() {
+    let mut s = blank(true);
+    let line = Arc::new(Path::line(Vec2::new(0.0, 0.0), Vec2::new(20.0, 0.0)));
+    let stroke = Some(Stroke::new(Rgba::BLACK, 2.0));
+    let mut ids = Vec::with_capacity(2001);
+    {
+        let kf = s.editable_keyframe().unwrap();
+        for i in 0..2001u32 {
+            let id = ElementId(1000 + u64::from(i));
+            ids.push(id);
+            kf.elements.push(Arc::new(Element {
+                id,
+                name: String::new(),
+                transform: Affine::translate((i % 50) as f32 * 5.0, (i / 50) as f32 * 5.0),
+                color: Default::default(),
+                kind: ElementKind::Shape(Shape { path: line.clone(), fill: None, stroke: stroke.clone(), fill_rule: FillRule::default(), merge: false, warp: None }),
+            }));
+        }
+    }
+    let layer = s.layer;
+    s.selection.extend_on(layer, ids);
+    let v = run(&mut s, "modify.optimize", json!({"strength": 0}));
+    assert_eq!(v, json!({"before": 4002, "after": 4002}));
+    // Positive strength still enforces the 2,000-shape budget.
+    let err = s.execute("modify.optimize", &json!({"strength": 50})).unwrap_err().to_string();
+    assert!(err.contains("more than 2000"), "{err}");
+}
+
+#[test]
+fn optimize_reports_after_from_committed_remerged_raw_shapes() {
+    let mut s = blank(false);
+    // A raw stroke along y = 100 with a shallow 3.5 px dip around x = 150.
+    let mut p = Path::new();
+    p.move_to(Vec2::new(50.0, 100.0));
+    for i in 1..=40 {
+        let x = 50.0 + i as f32 * 5.0;
+        let dx = (x - 150.0).abs();
+        let y = if dx < 20.0 { 100.0 + 3.5 * (1.0 - dx / 20.0) } else { 100.0 };
+        p.line_to(Vec2::new(x, y));
+    }
+    run(&mut s, "draw.path", json!({"d": p.to_svg(), "fill": null, "stroke": "#000000", "stroke_width": 2, "object": false}));
+    // A short raw stroke ending just above the original dip (at y = 102.5), which the flattened
+    // optimized curve will cross around y = 100.
+    run(&mut s, "draw.line", json!({"x0": 150, "y0": 80, "x1": 150, "y1": 102.5, "stroke": "#ff0000", "stroke_width": 2}));
+    let all = shapes(&s);
+    assert_eq!(all.len(), 2, "the two raw strokes do not touch before optimize");
+    let curve_id = all.into_iter().find(|(_, sh, _)| sh.stroke.as_ref().is_some_and(|st| st.color == Rgba::BLACK)).expect("black raw stroke").0;
+    s.select_only(vec![curve_id]);
+    let v = run(&mut s, "modify.optimize", json!({"strength": 80}));
+    let sel = s.selection.on(s.layer);
+    assert!(sel.len() >= 2, "remerge split the optimized raw stroke at the new crossing: {sel:?}");
+    let committed_anchors: usize = shapes(&s)
+        .iter()
+        .filter(|(id, ..)| sel.contains(id))
+        .map(|(_, sh, _)| sh.path.editable_anchors().len())
+        .sum();
+    assert_eq!(v["after"].as_u64(), Some(committed_anchors as u64), "reported after must match committed raw shapes: {v}");
+}
