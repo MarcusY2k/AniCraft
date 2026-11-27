@@ -23,6 +23,9 @@ AniCraft is an independent, open-source project, and is not affiliated with or e
   replaces a feature.
 * **Keeping it.** A PR that changes a feature's status changes its row here, in the same PR. A
   row that turns **done** loses its backlog id.
+* **Headless.** The headless line under the summary follows
+  [RFC-0052](https://github.com/storytold/craft-contrib/blob/main/rfcs/0052-headless-reach.md). Never mark a row
+  `headless: yes` by hand: that needs a command id from the registry.
 
 ## Summary
 
@@ -53,6 +56,9 @@ AniCraft is an independent, open-source project, and is not affiliated with or e
 
 The counts are of the rows below, so they weigh a small feature like a large one. The backlog,
 not this table, says what matters most.
+
+**Headless ([RFC-0052](https://github.com/storytold/craft-contrib/blob/main/rfcs/0052-headless-reach.md)): 0 yes, 0 no (window 0, os 0, engine-gap 0), 0 partial, 348 unknown.**
+That says what `anicraft-cli` and its MCP server (`anicraft-cli mcp`) can do without the desktop window. The rows don't name command ids yet, so none can be `yes`: RFC-0052 takes `yes` only from the command registry the CLI and the MCP server load, and only once a row cites a command id in it (from the [command reference](guide/reference/commands.md)). Until then, a row that is not reachable headless can end its notes with `headless: no` or `headless: partial`, plus `reach: window` (needs the desktop window, a dialog or the pointer), `reach: os` (needs an OS or online service the engine doesn't wrap) or `reach: engine-gap` (could be a command, isn't one yet). Update the count here when you do. A row with no mark is `unknown`.
 
 ## Workspace and panels
 
