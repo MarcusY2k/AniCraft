@@ -106,6 +106,8 @@ impl Subpath {
         self.segs.iter().filter(|s| matches!(s, Seg::Cubic(_))).count()
     }
 
+    /// Covered fill area of this closed subpath (untangled with [`polygons::union`] so
+    /// opposite-winding lobes add rather than cancel).
     fn enclosed_area(&self) -> f64 {
         let diag = self.bounds_diag();
         if !diag.is_finite() || diag <= LINK_EPS {
@@ -115,7 +117,14 @@ impl Subpath {
         // shapes keep accuracy (`Path::flatten` falls back to 0.1 for tolerances <= 1e-4).
         let flat_tol = (diag * 0.002).max(1e-3);
         let loops: Vec<Vec<Vec2>> = self.to_path().flatten(&Affine::IDENTITY, flat_tol).into_iter().map(|pl| pl.points).collect();
-        let area = polygons::area(&loops);
+        if loops.is_empty() {
+            return 0.0;
+        }
+        let signed = polygons::area(&loops);
+        let united = polygons::union(loops);
+        // Fall back to signed area if `union` yields no loops, so truly degenerate/collinear paths
+        // still measure zero while a non-degenerate shape is not falsely rejected.
+        let area = if united.is_empty() { signed } else { polygons::area(&united) };
         if area.is_finite() { area } else { 0.0 }
     }
 }
@@ -844,6 +853,32 @@ mod tests {
         assert!(matches!(smoothed.cmds.last(), Some(PathCmd::Close)), "closed loop stays closed: {:?}", smoothed.cmds);
         assert_ne!(smoothed, square, "normal closed loop still changes when smoothed");
         assert!(path_area(&smoothed) > 0.0, "smoothed loop still encloses area");
+    }
+
+    #[test]
+    fn smooth_accepts_closed_path_with_opposite_winding_lobes() {
+        let mut path = Path::new();
+        path.move_to(Vec2::new(0.0, 0.0))
+            .cubic_to(Vec2::new(0.0, 1000.0), Vec2::new(1000.0, 1000.0), Vec2::new(1000.0, 1000.0))
+            .line_to(Vec2::new(1000.0, -1000.0))
+            .line_to(Vec2::new(0.0, 0.0))
+            .line_to(Vec2::new(-1000.0, 1000.0))
+            .line_to(Vec2::new(-1000.0, -1000.0))
+            .close();
+        let covered_area = |p: &Path| {
+            let loops: Vec<Vec<Vec2>> = p.flatten(&Affine::IDENTITY, 2.0).into_iter().map(|pl| pl.points).collect();
+            polygons::area(&polygons::union(loops))
+        };
+        let out = smooth(&path, 1.0);
+        assert!(all_finite(&out));
+        assert!(matches!(out.cmds.last(), Some(PathCmd::Close)), "closed stays closed: {:?}", out.cmds);
+        assert_ne!(out, path, "opposite-winding closed path should be smoothed rather than rejected");
+        assert!(
+            covered_area(&out) > covered_area(&path) * 0.01,
+            "smoothed lobes still cover substantial area: {} vs {}",
+            covered_area(&out),
+            covered_area(&path)
+        );
     }
 
     #[test]
