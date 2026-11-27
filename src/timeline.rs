@@ -190,6 +190,15 @@ pub enum TlDrag {
     Span { layer: LayerId, start: u32, end: u32, to: u32 },
 }
 
+/// An in-progress drag of a layer by its name (#407), with the filter root that was in effect
+/// when the drag started so View Only the Active Layer keeps an active folder's rows available
+/// to drop on while a child is dragged (#653).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LayerDrag {
+    pub layer: LayerId,
+    pub filter_root: LayerId,
+}
+
 /// Where a layer dragged by its name lands (#407), as `layer.move` takes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LayerDrop {
@@ -560,11 +569,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     // rows and columns are painted, so cost is independent of document size.
     // Rows are the layers not inside a closed folder (`rows[r]` is row r's layer index), or
     // with View Only the Active Layer on, the active layer alone — or the active folder with
-    // the layers inside it, still respecting closed folders (#529, #653).
+    // the layers inside it, still respecting closed folders (#529, #653). While a layer drag is
+    // in progress, keep the filter root that was in effect when it started so dragging a child
+    // out of an active folder still has sibling rows to drop on.
+    let filter_root = app.tl_layer_drag.map_or(app.s.layer, |d| d.filter_root);
     let rows: Vec<usize> = {
         let tl = app.s.timeline();
         if app.tl_only_active {
-            match tl.layers.iter().enumerate().find(|(_, l)| l.id == app.s.layer) {
+            match tl.layers.iter().enumerate().find(|(_, l)| l.id == filter_root).or_else(|| tl.layers.iter().enumerate().find(|(_, l)| l.id == app.s.layer)) {
                 Some((ai, layer)) if layer.kind == LayerKind::Folder => {
                     let active = layer.id;
                     (0..tl.layers.len())
@@ -907,13 +919,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         // on top.
         let nr = ui.interact(name_rect, ui.scope_id().with(("lname", layer.id.0)), if layer.kind == LayerKind::Camera { Sense::click() } else { Sense::click_and_drag() });
         if nr.drag_started_by(egui::PointerButton::Primary) && layer.kind != LayerKind::Camera {
-            app.tl_layer_drag = Some(layer.id);
+            app.tl_layer_drag = Some(LayerDrag { layer: layer.id, filter_root });
             // A drag that starts on one of several selected layers takes them all.
             if !is_picked {
                 app.run("layer.select", json!({"layer": layer.id.0}));
             }
         }
-        if app.tl_layer_drag.is_some_and(|d| d == layer.id || (is_picked && picked.contains(&d))) {
+        if app.tl_layer_drag.is_some_and(|d| d.layer == layer.id || (is_picked && picked.contains(&d.layer))) {
             painter.rect_filled(left, 0.0, T.accent.gamma_multiply(0.18));
         }
         // Screen readers hear the row as a selectable item, "Ball · layer", then its toggles.
@@ -1576,7 +1588,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     // A layer dragged by its name (#407): a line shows where it will land, a folder lights up
     // when it goes inside. Released there it moves in one undo step; Esc, or a release away
     // from the layers, leaves it where it was.
-    if let Some(dragged) = app.tl_layer_drag {
+    if let Some(drag) = app.tl_layer_drag {
+        let dragged = drag.layer;
         let (pointer, down, cancel) = ui.input(|i| (i.pointer.latest_pos(), i.pointer.primary_down(), i.key_pressed(egui::Key::Escape)));
         let index_of = |id: LayerId| tl_now.layers.iter().position(|l| l.id == id);
         // One of several selected layers takes the others along (#512).
@@ -2772,6 +2785,62 @@ mod tests {
         app.run("layer.select", json!({"layer": outside.0}));
         let t = tree(&ctx, &mut app);
         assert_eq!(rows(&t), ["Outside"], "a non-folder active layer shows only its own row");
+    }
+
+    /// #653: with View Only the Active Layer on and a folder active, dragging an unselected child
+    /// onto a sibling keeps the folder's rows available to drop on so the order changes, and
+    /// pressing Esc still cancels without moving anything.
+    #[test]
+    fn view_only_active_layer_keeps_a_folders_rows_while_dragging_a_child() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_context(&ctx, anicraft_engine::Session::default(), Some(std::path::PathBuf::from("unused.png")));
+        app.show_panel(crate::dock::Panel::Timeline);
+        let outside = app.s.layer;
+        app.run("layer.rename", json!({"layer": outside.0, "name": "Outside"}));
+        let folder = LayerId(app.run("layer.new_folder", json!({"name": "Props", "wrap": false})).expect("folder")["layer"].as_u64().expect("id"));
+        let a = LayerId(app.run("layer.new", json!({"name": "Child A"})).expect("a")["layer"].as_u64().expect("id"));
+        let b = LayerId(app.run("layer.new", json!({"name": "Child B"})).expect("b")["layer"].as_u64().expect("id"));
+        app.run("layer.move", json!({"layer": a.0, "into": folder.0}));
+        app.run("layer.move", json!({"layer": b.0, "into": folder.0}));
+        app.run("layer.select", json!({"layer": folder.0}));
+        app.tl_only_active = true;
+        settle(&ctx, &mut app);
+
+        let pos_of = |app: &App, id: LayerId| app.s.timeline().layers.iter().position(|l| l.id == id).expect("layer exists");
+        let (top, bottom) = if pos_of(&app, a) < pos_of(&app, b) { (a, b) } else { (b, a) };
+        let shown_ids = |app: &App| app.drop.timeline.as_ref().expect("the timeline drew").rows.iter().map(|(_, id)| *id).collect::<Vec<_>>();
+        let on_name = |app: &App, id: LayerId, t: f32| {
+            let rect = app.drop.timeline.as_ref().expect("the timeline drew").rows.iter().find(|(_, l)| *l == id).map(|(r, _)| *r).expect("row shows");
+            pos2(rect.left() + 70.0, rect.top() + rect.height() * t)
+        };
+
+        // Cancelling a drag with Esc keeps the folder's rows while dragging and leaves the order alone.
+        let before: Vec<LayerId> = app.s.timeline().layers.iter().map(|l| l.id).collect();
+        let (from, to) = (on_name(&app, top, 0.5), on_name(&app, bottom, 0.8));
+        frame(&ctx, &mut app, vec![Event::PointerMoved(from)], Modifiers::NONE);
+        frame(&ctx, &mut app, vec![button(from, true, Modifiers::NONE)], Modifiers::NONE);
+        for i in 1..=10 {
+            frame(&ctx, &mut app, vec![Event::PointerMoved(from + (to - from) * (i as f32 / 10.0))], Modifiers::NONE);
+        }
+        assert!(app.tl_layer_drag.is_some(), "child drag is active");
+        let mid = shown_ids(&app);
+        assert!(mid.contains(&folder) && mid.contains(&top) && mid.contains(&bottom) && !mid.contains(&outside), "folder rows stay available while dragging: {mid:?}");
+        frame(&ctx, &mut app, vec![Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }], Modifiers::NONE);
+        assert!(app.tl_layer_drag.is_none(), "Esc cancels the drag");
+        frame(&ctx, &mut app, vec![button(to, false, Modifiers::NONE)], Modifiers::NONE);
+        settle(&ctx, &mut app);
+        assert_eq!(app.s.timeline().layers.iter().map(|l| l.id).collect::<Vec<_>>(), before, "cancelled drag leaves order unchanged");
+
+        // Re-select the folder and drag the upper child onto the lower half of its sibling: the order swaps.
+        app.run("layer.select", json!({"layer": folder.0}));
+        settle(&ctx, &mut app);
+        let (from, to) = (on_name(&app, top, 0.5), on_name(&app, bottom, 0.8));
+        drag(&ctx, &mut app, from, to, Modifiers::NONE);
+        assert!(app.tl_layer_drag.is_none(), "drag finished");
+        assert!(pos_of(&app, bottom) < pos_of(&app, top), "dropped child moved below its sibling");
+        assert_eq!(app.s.timeline().layer(top).and_then(|l| l.parent), Some(folder), "moved child stays inside the folder");
+        assert_eq!(app.s.timeline().layer(bottom).and_then(|l| l.parent), Some(folder), "sibling stays inside the folder");
+        assert_eq!(shown_ids(&app), vec![top], "after the drag ends, the filter follows the now-active child");
     }
 
     /// #653: at any reachable layers-column width (down to the narrowest), the View Only the
