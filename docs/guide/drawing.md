@@ -18,6 +18,7 @@ your hand.
 |---|---|---|
 | Selection | **V** | Select, move and bend artwork |
 | Subselection | **A** | Edit points and curve handles |
+| Lasso | **L** | Select an irregular area with a freehand loop |
 | Free Transform | **Q** | Scale, skew, rotate and move |
 | Gradient Transform | **F** | Move, turn and stretch a gradient or bitmap fill |
 | Width | **U** | Vary a line's thickness along it |
@@ -114,6 +115,18 @@ whatever you moved merges with what it lands on.
 
 The marquee, **Shift**-click and **Edit › Select All** (**Ctrl+A**) work across every visible,
 unlocked layer at once. **Edit › Deselect All** is **Ctrl+Shift+A**.
+
+### The Lasso tool
+
+The **Lasso** (**L**) selects an irregular area. Drag a freehand loop on the stage and let go:
+the loop closes automatically back to where you started. On every visible, unlocked layer, the
+parts of merged fills and lines inside the loop are cut at its edges and selected, and objects
+(drawing objects, groups, symbols, text and bitmaps) wholly inside the loop are selected.
+
+Hold **Shift** to add to the selection, press **Esc** while dragging to cancel, or click on empty
+stage to clear the selection. As with the marquee, clicking away without editing heals cut raw
+shapes back whole. To move or transform what you selected, switch to the **Selection** (**V**) or
+**Free Transform** (**Q**) tool.
 
 ## Drawing shapes and lines
 

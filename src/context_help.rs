@@ -16,6 +16,7 @@ pub fn tool_topic(t: Tool) -> &'static str {
     match t {
         Tool::Select => "drawing.md#the-tools",
         Tool::Subselect => "drawing.md#editing-points-with-subselection",
+        Tool::Lasso => "drawing.md#the-lasso-tool",
         Tool::Transform => "drawing.md#transforming-artwork",
         Tool::Warp => "masks-guides-camera-bones.md#asset-warp",
         Tool::GradientTransform => "drawing.md#gradients-and-bitmap-fills",

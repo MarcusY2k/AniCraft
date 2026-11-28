@@ -107,7 +107,7 @@ The **Headless** column at the end of each table says whether `anicraft-cli` and
 | Subselection | **done** | [ADR 0042](adr/0042-subselection-and-merging-everywhere.md), [ADR 0045](adr/0045-raw-points-and-raw-shapes-inside-symbols.md). Alt-drag an anchor pulls out mirrored curve handles ([#615](https://github.com/storytold/anicraft/issues/615)). |
 | Free Transform | **partial** | Scale, skew, rotate, the transformation point, a box that turns with the object ([ADR 0111](adr/0111-the-transformation-point-a-turning-box-and-layer-opacity.md)), Envelope ([ADR 0080](adr/0080-drawing-parity-leftovers.md)). Missing: Distort. Open bug: rotation on Windows and FreeBSD ([#479](https://github.com/storytold/anicraft/issues/479)), not reproduced on Windows 10 (P-005). |
 | Gradient Transform | **done** | Gradient and bitmap fills, Lock Fill. |
-| Lasso | **missing** | P-018 ([#515](https://github.com/storytold/anicraft/issues/515)). |
+| Lasso | **done** | Freehand loop selection ([#515](https://github.com/storytold/anicraft/issues/515)); cuts raw shapes and selects objects wholly inside. |
 | Polygon (lasso) | **missing** | P-018. |
 | Magic Wand | **missing** | P-018. |
 | Pen, with Add, Delete and Convert Anchor Point | **done** | [ADR 0115](adr/0115-pen-parity-and-keep-area-tweens.md). Add, delete and convert are gestures of the Pen and Subselection, not tools of their own. |

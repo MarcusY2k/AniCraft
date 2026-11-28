@@ -15,6 +15,7 @@ fn tool_icon(tool: Tool) -> Icon {
     match tool {
         Tool::Select => Icon::Select,
         Tool::Subselect => Icon::Subselect,
+        Tool::Lasso => Icon::Lasso,
         Tool::Transform => Icon::Transform,
         Tool::GradientTransform => Icon::GradientTransform,
         Tool::Width => Icon::Width,
