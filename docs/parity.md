@@ -32,7 +32,7 @@ AniCraft is an independent, open-source project, and is not affiliated with or e
 | Area | Done (ours included) | Partial | Missing | Won't do |
 |---|---|---|---|---|
 | Workspace and panels | 23 | 5 | 4 | 2 |
-| Tools | 19 | 7 | 7 | 1 |
+| Tools | 20 | 7 | 6 | 1 |
 | Drawing model | 16 | 4 | 3 | 0 |
 | Colour | 8 | 1 | 2 | 2 |
 | Text | 8 | 5 | 5 | 2 |
@@ -52,7 +52,7 @@ AniCraft is an independent, open-source project, and is not affiliated with or e
 | Accessibility | 4 | 2 | 1 | 0 |
 | Preferences and shortcuts | 6 | 2 | 0 | 1 |
 | Automation | 4 | 2 | 1 | 1 |
-| **All** | **199** | **53** | **69** | **27** |
+| **All** | **200** | **54** | **67** | **27** |
 
 The counts are of the rows below, so they weigh a small feature like a large one. The backlog,
 not this table, says what matters most.
@@ -107,7 +107,7 @@ The **Headless** column at the end of each table says whether `anicraft-cli` and
 | Subselection | **done** | [ADR 0042](adr/0042-subselection-and-merging-everywhere.md), [ADR 0045](adr/0045-raw-points-and-raw-shapes-inside-symbols.md). Alt-drag an anchor pulls out mirrored curve handles ([#615](https://github.com/storytold/anicraft/issues/615)). |
 | Free Transform | **partial** | Scale, skew, rotate, the transformation point, a box that turns with the object ([ADR 0111](adr/0111-the-transformation-point-a-turning-box-and-layer-opacity.md)), Envelope ([ADR 0080](adr/0080-drawing-parity-leftovers.md)). Missing: Distort. Open bug: rotation on Windows and FreeBSD ([#479](https://github.com/storytold/anicraft/issues/479)), not reproduced on Windows 10 (P-005). |
 | Gradient Transform | **done** | Gradient and bitmap fills, Lock Fill. |
-| Lasso | **done** | Freehand loop selection ([#515](https://github.com/storytold/anicraft/issues/515)); cuts raw shapes and selects objects wholly inside. |
+| Lasso | **done** | Freehand loop selection ([#515](https://github.com/storytold/anicraft/issues/515)); cuts raw shapes and selects objects wholly inside (`raw.select_area`, [ADR 0136](adr/0136-the-third-issue-batch-what-merged-what-is-held.md)). |
 | Polygon (lasso) | **missing** | P-018. |
 | Magic Wand | **missing** | P-018. |
 | Pen, with Add, Delete and Convert Anchor Point | **done** | [ADR 0115](adr/0115-pen-parity-and-keep-area-tweens.md). Add, delete and convert are gestures of the Pen and Subselection, not tools of their own. |
@@ -154,7 +154,7 @@ The **Headless** column at the end of each table says whether `anicraft-cli` and
 | Envelope | **done** | [ADR 0080](adr/0080-drawing-parity-leftovers.md). Shapes and drawing objects only. |
 | Distort | **missing** | P-020. |
 | Modify › Shape: Convert Lines to Fills, Expand Fill, Soften Fill Edges | **done** | [ADR 0109](adr/0109-shape-commands-picker-eyedropper-and-transformation-origins.md). Properties repeats Convert Lines to Fills at the top of a shape's rows; with only a fill selected the button is unavailable. |
-| Modify › Shape: Smooth, Straighten, Advanced Smooth, Optimize | **partial** | Smooth, Straighten and Optimize Curves ([#510](https://github.com/storytold/anicraft/issues/510)). Missing: Advanced Smooth (P-020). |
+| Modify › Shape: Smooth, Straighten, Advanced Smooth, Optimize | **partial** | Smooth, Straighten and Optimize Curves (`modify.smooth`, `modify.straighten`, `modify.optimize`, [#510](https://github.com/storytold/anicraft/issues/510)); Optimize says in the status bar how many curves it removed. Missing: the Advanced Smooth and Advanced Straighten dialogs (P-020). |
 | Stroke styles: solid, dashed, dotted; caps, joins, miter | **done** | [ADR 0046](adr/0046-stroke-caps-joins-and-dashes.md). |
 | Stroke styles: ragged, stipple, hatched | **missing** in authoring | They import from Animate files as solid lines and the report says so† (P-032). |
 | Stroke scale modes and hairlines | **partial** | Hairlines are drawn in outline view only. Missing: Normal, Horizontal, Vertical, None scaling and the hairline style (P-032). |
@@ -275,7 +275,7 @@ The **Headless** column at the end of each table says whether `anicraft-cli` and
 | Classic ease presets and the custom ease editor | **done** | [ADR 0081](adr/0081-ease-presets-and-custom-eases.md). |
 | Eases per property group on a classic tween | **done** | [ADR 0081](adr/0081-ease-presets-and-custom-eases.md)†. |
 | Classic motion guides | **done** | |
-| Motion tweens: one object, property keyframes | **done** | [ADR 0016](adr/0016-motion-tweens.md). |
+| Motion tweens: one object, property keyframes | **done** | [ADR 0016](adr/0016-motion-tweens.md). Raw artwork, a bitmap, a group or several objects become a symbol first: the window asks first, as the reference app does, and offers its type; the command converts and says what it made ([ADR 0136](adr/0136-the-third-issue-batch-what-merged-what-is-held.md)). |
 | Motion paths edited on the stage | **done** | [ADR 0030](adr/0030-motion-paths.md), [ADR 0038](adr/0038-motion-path-points.md), [ADR 0049](adr/0049-motion-path-pins.md). |
 | Motion Editor: curves per property, eases, handles | **done** | [ADR 0083](adr/0083-motion-editor-and-timeline-retiming.md), [ADR 0092](adr/0092-surviving-gpu-failures-and-motion-editor-filter-tracks.md), [ADR 0099](adr/0099-filter-colour-and-stepped-tracks-built-in-presets-and-filters-on-text.md). |
 | Split, join, retime, stretch a motion tween | **done** | [ADR 0083](adr/0083-motion-editor-and-timeline-retiming.md). |

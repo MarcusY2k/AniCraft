@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+* **Third issue batch** (M8, ADR 0136; backlog P-012, P-018, P-020, P-021). Fifteen pull
+  requests from outside, merged with their commits and listed below, by Yusuf Mantam (YusufMntm),
+  Ap3pp3rs94 and Will Makes (WillMakes), with these fixes on top:
+  * **A gradient edited from a script stays a gradient** (#626). `paint.set_fill` with no
+    `type` gave the fill swatch's kind to every selected shape, so adding a colour stop to a
+    selected radial fill made it a solid colour whenever the swatch was solid. Each fill now
+    keeps its own kind, and the fill swatch becomes the gradient the picker shows.
+  * **Fill alpha changes only the opacity** (#645): with several shapes selected each keeps
+    its own colour, and gradient and bitmap fills are left alone (`element.set_fill {alpha}`).
+  * **Straighten keeps a thin closed fill** instead of flattening it to a line with no area,
+    and **Optimize Curves says how many curves it removed** in the status bar (#510).
+  * **Pulling handles out of a point where more than two lines meet** says why nothing
+    happened (#615).
+  * **Save… in the Brush row** offers a name only for one of your own brushes (#632), and
+    **New Symbol** offers the symbol types in Convert to Symbol's order, starting from the
+    type you last chose (#655).
+  * **Create Motion Tween asks before it makes a symbol** (#604, ADR 0136): raw artwork, a
+    bitmap, a group or several objects become one symbol, of the type you pick; from the
+    command line the command converts and reports the symbol it made.
+  * `camera.set` documents that an edit on a held frame lands on the keyframe that holds it
+    (#673), and `library.new_symbol` answers `{symbol}`.
+  * Not in this batch: stroke joins where separately drawn lines meet (#589, outside PR #620,
+    backlog P-058): the fix is held until its work for each frame is bounded.
 * **Adding a colour stop to a gradient keeps it a gradient** (#626): clicking the colour-stop bar
   (or changing Overflow, Linear RGB or Focal point) on a selected linear or radial fill when the
   tool's fill swatch held a different fill type no longer switches the fill to the swatch's type.
