@@ -547,6 +547,7 @@ impl GpuRenderer {
         use anicraft_doc::{ColorTransform, DisplayItem, ElementId, Filter, Group, LayerId, Paint, Pixels, Rgba};
         use anicraft_geom::{Affine, FillRule, Path};
         let item = |path: Path, fill: Paint| DisplayItem {
+            joins: false,
             path: Arc::new(path),
             transform: Affine::IDENTITY,
             fill: Some(fill),
