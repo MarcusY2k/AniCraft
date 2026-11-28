@@ -1474,6 +1474,11 @@ fn selection_props(app: &mut App, ui: &mut egui::Ui, e: &anicraft_engine::doc::E
         }
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
+            if all.iter().any(|el| matches!(&el.kind, ElementKind::Shape(sh) if sh.merge))
+                && ui.button(tr!("Create Object")).on_hover_text(tr!("Turn the selected raw shapes into a drawing object")).clicked()
+            {
+                app.invoke("modify.create_object");
+            }
             for (label, id) in [(tr!("Convert to Symbol"), "modify.convert_to_symbol"), (tr!("Break Apart"), "modify.break_apart"), (tr!("Duplicate"), "edit.duplicate"), (tr!("Delete"), "edit.delete")] {
                 if ui.button(label).clicked() {
                     app.invoke(id);

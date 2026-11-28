@@ -1004,7 +1004,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             }
             // Modify › Combine Objects (ADR 0073), as in Animate's menu.
             ui.menu_button(tr!("Combine Objects"), |ui| {
-                for id in ["modify.union", "modify.intersect", "modify.punch", "modify.crop"] {
+                for id in ["modify.union", "modify.intersect", "modify.punch", "modify.crop", "modify.create_object"] {
                     crate::menus::cmd_item(app, ui, id);
                 }
             });
