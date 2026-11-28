@@ -273,10 +273,21 @@ fn gradient_swatches(ui: &mut egui::Ui, paint: Option<&Paint>) -> Option<FillEdi
 /// A gradient: overflow, Linear RGB and the focal point, the stop bar, the picked stop's
 /// position, and the colour picker for its colour.
 fn gradient(ui: &mut egui::Ui, popup: Id, stops: &[GradientStop], spread: Spread, linear_rgb: bool, focal: Option<f32>) -> Option<FillEdit> {
-    // Always name the gradient's kind: `paint.set_fill` falls back to the tool swatch's kind when
-    // `type` is omitted, which would turn a selected gradient solid while the swatch is solid (#626).
+    // Every edit names the whole gradient shown, not only the part that changed: the fill
+    // swatch then becomes this gradient too (as the reference app's Color panel sets the tool's
+    // fill), instead of a white-to-black one of the same kind when the swatch held a solid
+    // colour while a gradient was selected (#626).
     let kind = if focal.is_some() { "radial" } else { "linear" };
-    let set = |label: &'static str, live: bool, params: Value| Some(FillEdit::Set { label, live, params });
+    let set = |label: &'static str, live: bool, params: Value| {
+        let mut all = json!({"type": kind, "stops": stops_json(stops), "spread": spread.key(), "linear_rgb": linear_rgb});
+        if let (Some(f), Some(o)) = (focal, all.as_object_mut()) {
+            o.insert("focal".into(), json!(f));
+        }
+        if let (Some(o), Some(changed)) = (all.as_object_mut(), params.as_object()) {
+            o.extend(changed.clone());
+        }
+        Some(FillEdit::Set { label, live, params: all })
+    };
     let mut out = None;
     let mut sp = spread;
     ui.horizontal(|ui| {
@@ -714,6 +725,8 @@ mod tests {
             other => panic!("expected radial fill after adding a stop, got {other:?}"),
         }
 
+        // The swatch is the gradient that was edited, stops and all, not a new white-to-black one.
+        assert_eq!(app.s.style.fill_paint().stops().map(<[_]>::len), Some(original.len() + 1), "the fill swatch follows the picker");
         // Changing a gradient option (Overflow) with a solid swatch also keeps it radial and keeps its stops.
         app.s.style.fill_paint = None;
         let paint = current(&app).0;
@@ -728,5 +741,6 @@ mod tests {
             }
             other => panic!("expected radial fill after changing overflow, got {other:?}"),
         }
+        assert_eq!(app.s.style.fill_paint().stops().map(<[_]>::len), Some(original.len() + 1), "an option alone carries the stops to the swatch");
     }
 }
