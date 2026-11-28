@@ -2887,7 +2887,6 @@ mod pattern_tests {
     }
 
     fn item(path: Path, fill: bool, stroke: Option<f32>) -> anicraft_engine::doc::DisplayItem {
-        joins: false,
         use anicraft_engine::doc::{ColorTransform, DisplayItem, ElementId, LayerId, Paint, Rgba, Stroke};
         DisplayItem {
             joins: false,
