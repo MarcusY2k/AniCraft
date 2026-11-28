@@ -451,6 +451,7 @@ fn enabled(app: &App, id: &str) -> bool {
         "modify.lines_to_fills" => selected_shape(app, |sh| sh.stroke.is_some()),
         "modify.expand_fill" => selected_shape(app, |sh| sh.fill.is_some()),
         "modify.soften_fill_edges" => selected_shape(app, |sh| sh.fill.as_ref().is_some_and(|f| !matches!(f, anicraft_engine::doc::Paint::Bitmap { .. }))),
+        "modify.smooth" | "modify.straighten" | "modify.optimize" => selected_shape(app, |sh| sh.warp.is_none()),
         // Convert Audio to Keyframes and Auto Lip-Sync read a sound on this timeline (ADR 0114).
         "sound.to_keyframes" | "sound.lip_sync" => app.s.timeline().layers.iter().any(|l| l.has_sounds()),
         // Data bindings (ADR 0118): one instance and a table to bind; bindings to remove or bake.

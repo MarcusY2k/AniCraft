@@ -403,7 +403,7 @@ changes everywhere it's used.
 
 ### Lines to fills, expanding and softening fills
 
-**Modify › Shape** has three commands for the selected shapes.
+**Modify › Shape** has commands for changing the geometry of selected shapes.
 
 **Convert Lines to Fills** turns each selected line into a fill of the line's exact outline,
 in the line's colour: its caps, joins, dashes, dots and width profile included. Use it to
@@ -432,6 +432,26 @@ fills (a bitmap fill has no alpha to fade), and looks best on a fill without an 
 fill and its bands are selected afterwards, so you can group them (**Ctrl+G**) or undo.
 
 Both dialogs remember what you entered. Each command is one undo step.
+
+### Smoothing, straightening and optimizing curves
+
+**Modify › Shape** also has three curve clean-up commands for selected lines and fill outlines.
+
+**Smooth** softens bends and evens out small bumps, softening sharp corners a little each time
+while keeping open endpoints in place. Run it again to smooth further; nearby segments that fit
+together merge as the curve relaxes.
+
+**Straighten** turns nearly straight segments into straight lines and pulls deeper curves closer
+to their chord, collapsing nearly collinear line runs. Run it again to flatten curves further.
+
+**Optimize Curves…** removes unnecessary points while keeping the shape's look and sharp corners.
+**Strength** (0–100 %) controls how far a refitted curve may move from the original; turn on
+**Multiple passes** to keep simplifying until the point count stops dropping. The dialog remembers
+its last settings.
+
+Lines keep their stroke width, caps, joins, dashes and width profile; fills keep their paint.
+Raw shapes merge back into the drawing and drawing objects stay objects. Each command is one
+undo step.
 
 ## Transforming artwork
 

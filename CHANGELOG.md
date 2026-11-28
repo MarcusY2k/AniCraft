@@ -184,6 +184,15 @@
   without dragging leaves the shape unchanged, and **Alt** on a handle still moves that handle
   alone. Headless: optional `handle: [dx, dy]` on `path.convert_point` and `raw.convert_points`
   (plus `merge?: bool` on `raw.convert_points`).
+* **Modify › Shape: Smooth, Straighten and Optimize Curves** (#510).
+  * **Smooth** (`modify.smooth`) softens curves and evens out small bumps on selected lines and
+    fill outlines, repeatable and keeping open endpoints fixed.
+  * **Straighten** (`modify.straighten`) turns nearly straight segments into lines, flattens
+    gentle curves toward their chord and collapses nearly collinear line runs.
+  * **Optimize Curves…** (`modify.optimize`) removes extra points while keeping sharp corners and
+    the shape's look, with a strength slider (0–100 %) and optional multiple passes, returning the
+    before and after point counts.
+
 * **Timeline and panel bugs from the tracker** (M8, backlog P-009 and P-010, ADR 0131).
   * **Several layers selected at once** (#512). **Ctrl**-click a layer's name to add it or take
     it out, **Shift**-click for every layer from the active one, or **Shift+Up** and

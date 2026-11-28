@@ -745,36 +745,56 @@ fn merge_cmd(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"selected": s.selection.id_list()}))
 }
 
+/// Which raw elements [`remerge_in_place_mapped`] replaced, and each committed piece's topmost
+/// source element.
+#[derive(Default)]
+pub(crate) struct RemergeMap {
+    pub gone: Vec<ElementId>,
+    pub from: Vec<(ElementId, ElementId)>,
+}
+
 /// Merges the raw shapes `ids` again with the raw shapes they touch, keeping their stacking (an
 /// edit changed them in place). Selected shapes' pieces stay selected.
 pub(crate) fn remerge_in_place(s: &mut Session, ids: &[ElementId]) -> Result<()> {
-    remerge_in_place_ids(s, ids).map(|_| ())
+    remerge_in_place_mapped(s, ids).map(|_| ())
 }
 
-/// [`remerge_in_place`], returning the replacement element ids from `ids` when a merge happened
-/// (`None` when nothing merged or the merge declined, so `ids` stayed as edited).
+/// [`remerge_in_place`], returning the pieces that came from `ids` when a merge happened (every
+/// piece when none can be traced; `None` when nothing merged or the merge declined, so `ids`
+/// stayed as edited).
 pub(crate) fn remerge_in_place_ids(s: &mut Session, ids: &[ElementId]) -> Result<Option<Vec<ElementId>>> {
-    if ids.is_empty() {
+    let map = remerge_in_place_mapped(s, ids)?;
+    if map.gone.is_empty() {
         return Ok(None);
+    }
+    let mut mapped: Vec<ElementId> = map.from.iter().filter(|(_, source)| ids.contains(source)).map(|(piece, _)| *piece).collect();
+    if mapped.is_empty() {
+        mapped = map.from.iter().map(|(piece, _)| *piece).collect();
+    }
+    Ok(Some(mapped))
+}
+
+/// [`remerge_in_place`], returning which raw element ids were replaced and each committed piece's
+/// topmost source element id.
+pub(crate) fn remerge_in_place_mapped(s: &mut Session, ids: &[ElementId]) -> Result<RemergeMap> {
+    if ids.is_empty() {
+        return Ok(RemergeMap::default());
     }
     let kf = s.editable_keyframe()?;
     let existing = kf.elements.clone();
     let area = existing.iter().filter(|e| ids.contains(&e.id)).filter_map(|e| mergeable(e).map(|sh| reach(sh, &e.transform))).fold(Rect::EMPTY, |r, b| r.union(&b));
     if area.is_empty() {
-        return Ok(None);
+        return Ok(RemergeMap::default());
     }
     let touching: Vec<usize> = existing.iter().enumerate().filter(|(_, e)| mergeable(e).is_some_and(|sh| !reach(sh, &e.transform).intersect(&area).is_empty())).map(|(i, _)| i).collect();
     let here = s.layer;
     let parts: Vec<Part> = touching.iter().filter_map(|&i| existing.get(i)).map(|e| Part::Shape(e.as_ref(), s.selection.contains(here, e.id))).collect();
     // Too much to merge at once: the shapes stay as edited.
-    let Some(rm) = merge::remerge_with(s, &parts, None) else { return Ok(None) };
+    let Some(rm) = merge::remerge_with(s, &parts, None) else { return Ok(RemergeMap::default()) };
     let gone: Vec<ElementId> = touching.iter().filter_map(|&i| existing.get(i)).map(|e| e.id).collect();
-    let mut mapped: Vec<ElementId> = rm.from.iter().filter_map(|&(piece, part)| gone.get(part).filter(|id| ids.contains(id)).map(|_| piece)).collect();
-    if mapped.is_empty() {
-        mapped = rm.out.iter().map(|e| e.id).collect();
-    }
+    let from: Vec<(ElementId, ElementId)> = rm.from.iter().filter_map(|&(piece, part)| touching.get(part).and_then(|&i| existing.get(i)).map(|e| (piece, e.id))).collect();
     merge::replace(s, &touching, rm.out, false)?;
     s.selection.retain(|l, id| l != here || !gone.contains(&id));
     s.selection.extend_on(here, rm.picked);
-    Ok(Some(mapped))
+    Ok(RemergeMap { gone, from })
 }
