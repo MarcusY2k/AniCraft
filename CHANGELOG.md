@@ -18,7 +18,7 @@
   document tabs, Envelope, bone springs, the brush library and pressure curves, per-character
   styles, text on a path), and the drawing chapter covers the Paint Brush, pressure curves and
   the Brush Library.
-* **From outside, merged with their commits** (M8): leaving the zoom field without typing
+* **From outside** (M8): leaving the zoom field without typing
   keeps a fitted view, and the view's centre is right at very small zooms (ViktorBystrov72,
   #633); no fragments of an older picture show on the pasteboard while stage tiles are
   replaced (Untoldent, #669); the GPU counts the scratch memory of filtered work still in
