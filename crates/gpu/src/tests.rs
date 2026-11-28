@@ -564,6 +564,14 @@ fn emulate(b: &Binned, v: &View) -> Vec<Premul> {
                     let k = cov.min(1.0);
                     if k > 1e-4 {
                         let s = shade();
+                        if k >= 1.0 && run_k <= 0.0 && !run_art {
+                            if run_m > 1e-4 {
+                                for j in 0..4 {
+                                    c[j] = s[j] * run_m + c[j] * (1.0 - s[3] * run_m);
+                                }
+                            }
+                            continue;
+                        }
                         let over = run_k + k - 1.0;
                         if over > 0.0 && run_k > 0.0 {
                             let keep = 1.0 - over / run_k * s[3];

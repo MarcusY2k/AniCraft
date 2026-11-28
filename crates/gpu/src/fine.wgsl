@@ -501,6 +501,13 @@ fn pixel(wg: vec3<u32>, lid: vec3<u32>) -> vec4<f32> {
             let k = min(cov, 1.0);
             if k > 1e-4 {
                 let s = shade(op, index[h], index[h + 2u], centre, x, y);
+                if k >= 1.0 && run_k <= 0.0 && !run_art {
+                    // Covered whole with nothing in the run yet: drawn at once.
+                    if run_m > 1e-4 {
+                        c = s * run_m + c * (1.0 - s.a * run_m);
+                    }
+                    continue;
+                }
                 let over = run_k + k - 1.0;
                 if over > 0.0 && run_k > 0.0 {
                     run_c *= 1.0 - over / run_k * s.a;

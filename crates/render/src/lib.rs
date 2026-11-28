@@ -211,8 +211,10 @@ fn render_cut(dl: &DisplayList, view: &View, cut: bool) -> Result<(Pixmap, Rende
         // into the one below at the group's alpha when the group's run of ops ends.
         let mut open: Vec<OpenGroup> = Vec::new();
         // The run of joined fills being added up (ADR 0138); it goes into the group or the rows
-        // its fills are drawn in when the next op isn't one of it.
-        let mut run = Run::default();
+        // its fills are drawn in when the next op isn't one of it. Its buffers are this
+        // thread's, kept from band to band and frame to frame (a run leaves them empty):
+        // making them anew for every band cost as much as the drawing.
+        let mut run = RUN.take();
         for op in &ops {
             let b = IRect { x0: op.bounds.x0, y0: op.bounds.y0.max(band.y0), x1: op.bounds.x1, y1: op.bounds.y1.min(band.y1) };
             if b.is_empty() {
@@ -247,7 +249,9 @@ fn render_cut(dl: &DisplayList, view: &View, cut: bool) -> Result<(Pixmap, Rende
                     top.dirty = top.dirty.union(&b);
                 }
                 (run.id, run.clip) = (op.run, op.clip);
-                run.add(&cov, op, b, (band.y0, w, rows.len()), &mut row);
+                let len = rows.len();
+                let under = open.last_mut().map_or(&mut *rows, |top| &mut top.buf);
+                run.add(&cov, op, b, (band.y0, w, len), &mut row, Some((under, mask.as_deref().map(Vec::as_slice))));
                 continue;
             }
             match open.last_mut() {
@@ -265,6 +269,7 @@ fn render_cut(dl: &DisplayList, view: &View, cut: bool) -> Result<(Pixmap, Rende
         while !open.is_empty() {
             close_group(&mut open, rows, &dl.groups, band.y0, w);
         }
+        RUN.set(run);
     });
     // Tens of thousands of small polygon buffers: free them on the pool, off the frame's
     // critical path (it cost about 2 ms at 1080p).
@@ -337,8 +342,10 @@ pub struct Fill {
     /// must overlap (`o = max(0, c + k − 1)`: the run's colour times `1 − o / c · s.a`), then
     /// adds `s · k`, and `c` becomes `min(1, c + k)`; when the run ends its colour, times its
     /// clip's coverage, goes src-over onto what is below. Where one fill covers the pixel
-    /// whole this is src-over. Clip artwork joins the same way: a coverage clip unites with the
-    /// run's `c` at its end, a soft one composites the run's colour.
+    /// whole this is src-over, so a fill that covers a pixel whole while the run has nothing
+    /// there (`c` is 0) goes src-over onto what is below at once, inside its clip, and leaves
+    /// `c` at 0. Clip artwork joins the same way, without that shortcut: a coverage clip
+    /// unites with the run's `c` at its end, a soft one composites the run's colour.
     pub run: u32,
 }
 
@@ -763,11 +770,18 @@ struct Run {
     dirty: Option<IRect>,
 }
 
+thread_local! {
+    /// A band's run buffers, for the next band this thread draws.
+    static RUN: std::cell::RefCell<Run> = std::cell::RefCell::default();
+}
+
 impl Run {
     /// Adds coverage `cov` (over `b`) of `op` to the run, in a band of `len` pixels, `w` to a
-    /// row, whose first row is `band_y0`.
-    fn add(&mut self, cov: &Coverage, op: &Prepared, b: IRect, (band_y0, w, len): (i32, usize, usize), c: &mut Vec<f32>) {
-        if self.colour.len() != len {
+    /// row, whose first row is `band_y0`. With `under` (what the run will go onto, and the
+    /// clip coverage it is drawn in), a pixel the fill covers whole where the run has nothing
+    /// yet is drawn there at once: most pixels, which then cost what they do outside a run.
+    fn add(&mut self, cov: &Coverage, op: &Prepared, b: IRect, (band_y0, w, len): (i32, usize, usize), c: &mut Vec<f32>, mut under: Option<(&mut [Premul], Option<&[f32]>)>) {
+        if self.colour.len() < len {
             self.colour = vec![[0.0; 4]; len];
             self.cover = vec![0.0; len];
         }
@@ -781,6 +795,15 @@ impl Run {
             let py = b.y0 + ry as i32;
             let start = (py - band_y0) as usize * w + b.x0 as usize;
             let (Some(colour), Some(cover)) = (self.colour.get_mut(start..start + bw), self.cover.get_mut(start..start + bw)) else { continue };
+            // This row of what is under the run, and of its clip's coverage.
+            let (mut below, mut clip) = (None, None);
+            if let Some((dst, mask)) = under.as_mut() {
+                below = dst.get_mut(start..start + bw);
+                clip = mask.and_then(|m| m.get(start..start + bw));
+                if mask.is_some() && clip.is_none() {
+                    below = None;
+                }
+            }
             for (i, ((r, have), &k)) in colour.iter_mut().zip(cover.iter_mut()).zip(c.iter()).enumerate() {
                 let k = k.min(1.0);
                 if k <= 1e-4 {
@@ -790,6 +813,24 @@ impl Run {
                     Some(s) => s,
                     None => op.shader.at(b.x0 + i as i32, py),
                 };
+                if k >= 1.0 {
+                    if *have <= 0.0
+                        && let Some(d) = below.as_mut().and_then(|row| row.get_mut(i))
+                    {
+                        let m = clip.map_or(1.0, |m| m.get(i).copied().unwrap_or(0.0));
+                        if m > 1e-4 {
+                            let inv = 1.0 - s[3] * m;
+                            *d = [s[0] * m + d[0] * inv, s[1] * m + d[1] * inv, s[2] * m + d[2] * inv, s[3] * m + d[3] * inv];
+                        }
+                        continue;
+                    }
+                    // Over what the run has there: src-over, which is what the lines below
+                    // come to.
+                    let keep = 1.0 - s[3];
+                    *r = [r[0] * keep + s[0], r[1] * keep + s[1], r[2] * keep + s[2], r[3] * keep + s[3]];
+                    *have = 1.0;
+                    continue;
+                }
                 // Side by side as far as the pixel has room; what can't be lies over the run.
                 let over = *have + k - 1.0;
                 if over > 0.0 && *have > 0.0 {
@@ -913,7 +954,7 @@ impl BandClips {
                 }
                 if op.run != 0 {
                     run.id = op.run;
-                    run.add(cov, op, b, (band.y0, w, px.len()), row);
+                    run.add(cov, op, b, (band.y0, w, px.len()), row, None);
                     continue;
                 }
                 composite(cov, op, b, band.y0, w, &mut px, row, None);
@@ -945,7 +986,7 @@ impl BandClips {
             }
             if op.run != 0 {
                 run.id = op.run;
-                run.add(cov, op, b, (band.y0, w, buf.len()), row);
+                run.add(cov, op, b, (band.y0, w, buf.len()), row, None);
                 continue;
             }
             row.clear();
