@@ -5945,31 +5945,6 @@ mod pointer_tests {
             assert!(((sq.max.x - sq.min.x) - (sq.max.y - sq.min.y)).abs() < 1.0, "{tool:?} with Shift+Alt has equal width and height: {sq:?}");
         }
     }
-}
-
-#[cfg(test)]
-mod hide_edges_tests {
-    use super::*;
-
-    #[test]
-    fn hide_edges_removes_a_selection_box_and_keeps_transform_handles() {
-        let ctx = egui::Context::default();
-        let session = anicraft_engine::Session::default();
-        let mut app = App::with_context(&ctx, session, Some(std::path::PathBuf::from("unused.png")));
-        app.s.execute("draw.rect", &serde_json::json!({"x": 160, "y": 80, "w": 100, "h": 60})).unwrap();
-        app.tool = Tool::Rect;
-        let marks = |app: &mut App| {
-            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 940.0))), ..Default::default() };
-            let mut frame = ctx.run_ui(input, |ui| show(app, ui));
-            frame.textures_delta.clear();
-            frame.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::Rect(r) if r.stroke.color == T.selection)).count()
-        };
-        assert!(marks(&mut app) > 0, "a drawing tool shows the selection box before Hide Edges");
-        assert!(app.run("view.hide_edges", serde_json::json!({})).is_some());
-        assert_eq!(marks(&mut app), 0, "the box is hidden");
-        assert!(!app.s.selection.is_empty(), "the drawing is still selected");
-        app.tool = Tool::Transform;
-        assert!(marks(&mut app) > 0, "Free Transform still shows its handles");
     #[test]
     fn lasso_drag_selects_and_esc_cancels() {
         let (mut app, ctx, at) = scene();
@@ -6109,5 +6084,31 @@ mod hide_edges_tests {
         app.invoke("edit.delete");
         assert!(app.s.visible_elements().is_empty(), "delete removed marqueed artwork across frames");
         assert!(app.s.selection.is_empty() && app.onion_ui.sel.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod hide_edges_tests {
+    use super::*;
+
+    #[test]
+    fn hide_edges_removes_a_selection_box_and_keeps_transform_handles() {
+        let ctx = egui::Context::default();
+        let session = anicraft_engine::Session::default();
+        let mut app = App::with_context(&ctx, session, Some(std::path::PathBuf::from("unused.png")));
+        app.s.execute("draw.rect", &serde_json::json!({"x": 160, "y": 80, "w": 100, "h": 60})).unwrap();
+        app.tool = Tool::Rect;
+        let marks = |app: &mut App| {
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 940.0))), ..Default::default() };
+            let mut frame = ctx.run_ui(input, |ui| show(app, ui));
+            frame.textures_delta.clear();
+            frame.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::Rect(r) if r.stroke.color == T.selection)).count()
+        };
+        assert!(marks(&mut app) > 0, "a drawing tool shows the selection box before Hide Edges");
+        assert!(app.run("view.hide_edges", serde_json::json!({})).is_some());
+        assert_eq!(marks(&mut app), 0, "the box is hidden");
+        assert!(!app.s.selection.is_empty(), "the drawing is still selected");
+        app.tool = Tool::Transform;
+        assert!(marks(&mut app) > 0, "Free Transform still shows its handles");
     }
 }
