@@ -290,6 +290,11 @@ fn optimize_subpath(sub: &Subpath, tolerance: f32) -> Subpath {
     if pts.len() < 2 {
         return Subpath { start: sub.start, segs: sub.segs.clone(), closed: sub.closed };
     }
+    // Far past what the fitter takes: thinning that many points first is itself slow (the
+    // simplifier is quadratic on a zigzag), so such an outline stays as it is.
+    if pts.len() > MAX_SUBPATH_POINTS.saturating_mul(4) {
+        return Subpath { start: sub.start, segs: sub.segs.clone(), closed: sub.closed };
+    }
     // Cap points fed to the least-squares fitter so hostile paths stay bounded.
     if pts.len() > MAX_SUBPATH_POINTS {
         pts = simplify(&pts, (tolerance * 0.05).max(1e-3));
@@ -581,7 +586,16 @@ fn straighten_subpath(sub: &Subpath, s: f32) -> Subpath {
     let start = segs.first().map_or(sub.start, |seg| match *seg {
         Seg::Line(a, _) | Seg::Cubic([a, ..]) => a,
     });
-    Subpath { start, segs, closed: sub.closed }
+    let cand = Subpath { start, segs, closed: sub.closed };
+    // A thin closed fill (a leaf of two shallow curves) would lose its area to its chords and
+    // vanish from the stage: like Smooth, Straighten leaves such an outline as it is.
+    if sub.closed {
+        let orig_area = sub.enclosed_area();
+        if orig_area > AREA_EPS && cand.enclosed_area() < orig_area * MIN_SMOOTH_AREA_RATIO {
+            return Subpath { start: sub.start, segs: sub.segs.clone(), closed: true };
+        }
+    }
+    cand
 }
 
 #[cfg(test)]
@@ -895,5 +909,24 @@ mod tests {
             }
         }
         assert!(b.width() > 0.5 && b.height() > 0.5, "loop stays visible: {b:?}");
+    }
+
+    /// A thin leaf, two shallow curves between the same two points, is within Straighten's
+    /// reach of its chords on both sides: straightened it would be a line there and back, a
+    /// fill with no area, gone from the stage.
+    #[test]
+    fn straighten_keeps_a_thin_closed_fill() {
+        let mut leaf = Path::new();
+        leaf.move_to(Vec2::new(0.0, 0.0));
+        leaf.cubic_to(Vec2::new(30.0, -8.0), Vec2::new(70.0, -8.0), Vec2::new(100.0, 0.0));
+        leaf.cubic_to(Vec2::new(70.0, 8.0), Vec2::new(30.0, 8.0), Vec2::new(0.0, 0.0));
+        leaf.close();
+        let area = |p: &Path| extract_subpaths(p).iter().map(Subpath::enclosed_area).sum::<f64>();
+        let before = area(&leaf);
+        assert!(before > 100.0, "the leaf has an area: {before}");
+        for strength in [0.25, 0.5, 1.0] {
+            let after = area(&straighten(&leaf, strength));
+            assert!(after > before * 0.25, "strength {strength}: {before} became {after}");
+        }
     }
 }

@@ -275,7 +275,7 @@ fn new_symbol_creates_an_empty_symbol_enters_it_and_undoes_in_one_step() {
     let before_stage = s.elements_on(s.layer).len();
     // Explicit name and kind; edit defaults to true and enters the new empty symbol.
     let v = run(&mut s, "library.new_symbol", json!({"name": "Hero", "kind": "movie_clip"}));
-    let id = SymbolId(v["id"].as_u64().unwrap());
+    let id = SymbolId(v["symbol"].as_u64().unwrap());
     assert_eq!((v["name"].as_str(), v["kind"].as_str()), (Some("Hero"), Some("movie_clip")));
     assert_eq!(s.doc.library.len(), before_lib + 1);
     assert_eq!(s.editing_symbol(), Some(id), "edit defaults to true");
@@ -306,7 +306,7 @@ fn new_symbol_creates_an_empty_symbol_enters_it_and_undoes_in_one_step() {
     // Folder placement works and duplicates are checked per folder (case aside).
     let f = folder(&run(&mut s, "library.new_folder", json!({"name": "Cast"})));
     let in_folder = run(&mut s, "library.new_symbol", json!({"name": "Hero", "folder": f, "edit": false}));
-    assert_eq!(path(&s, in_folder["id"].as_u64().unwrap()), "Cast/Hero");
+    assert_eq!(path(&s, in_folder["symbol"].as_u64().unwrap()), "Cast/Hero");
     // Refusals: duplicate name (case-insensitive), empty/whitespace, slash, unknown kind, missing folder.
     let lib_before_err = s.doc.library.len();
     assert!(err(&mut s, "library.new_symbol", json!({"name": "hero"})).contains("already has"));

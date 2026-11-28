@@ -24,7 +24,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Camera",
             "",
             None,
-            "{x?, y? (camera centre, stage px), dx?, dy? (pan by), zoom? (%, 5–2000), zoom_by? (factor), rotation? (°), rotate_by? (°), reset?: bool, frame?, and the colour effect as element.set_color_effect takes it: style?: none|brightness|tint|advanced, brightness? (%), tint? (#rrggbb), tint_amount? (%), red_multiplier? … blue_offset? (the camera has no opacity: no alpha values)}",
+            "{x?, y? (camera centre, stage px), dx?, dy? (pan by), zoom? (%, 5–2000), zoom_by? (factor), rotation? (°), rotate_by? (°), reset?: bool, frame?, and the colour effect as element.set_color_effect takes it: style?: none|brightness|tint|advanced, brightness? (%), tint? (#rrggbb), tint_amount? (%), red_multiplier? … blue_offset? (the camera has no opacity: no alpha values)}. On a frame a keyframe holds (no keyframe of its own, no tween) the edit lands on that keyframe, as an edit on the stage does, and the result says so: {keyframe (its frame), note}; insert a keyframe first to key the camera at the frame",
             true,
             set,
         ),
@@ -141,7 +141,7 @@ fn set(s: &mut Session, p: &Value) -> Result<Value> {
     let stage = s.doc.stage;
     // On a held frame (inside a keyframe's span, no tween) the edit lands on that keyframe, as
     // any edit does: say so, so a caller keying the camera over time sees it was not keyed here.
-    let held = s.timeline().layer(id).and_then(|l| l.keyframe_at(frame)).filter(|k| k.start != frame && k.tween.is_none() && k.motion.is_none()).map(|k| (k.start, k.start + k.duration.max(1) - 1));
+    let held = s.timeline().layer(id).and_then(|l| l.keyframe_at(frame)).filter(|k| k.start != frame && k.tween.is_none() && k.motion.is_none()).map(|k| (k.start, k.end().saturating_sub(1)));
     // A camera is created on a keyframe that has none (a blank camera keyframe is at rest).
     // (Its id is taken only when it is used, so a no-op leaves the document unchanged.)
     let fresh = ElementId(s.doc.next_id.max(1));

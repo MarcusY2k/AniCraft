@@ -22,7 +22,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "New Symbol…",
             "Insert",
             Some("Ctrl+F8"),
-            "{name? (default: the next free “Symbol n”), kind?: graphic|movie_clip|button (default: graphic), folder?: Library folder id (default: the top level), edit?: bool (default: true: open the new symbol for editing)} → {id, name, kind}: creates an empty symbol in the Library without placing it on the stage",
+            "{name? (default: the next free “Symbol n”), kind?: graphic|movie_clip|button (default: graphic), folder?: Library folder id (default: the top level), edit?: bool (default: true: open the new symbol for editing)} → {symbol, name, kind}: creates an empty symbol in the Library without placing it on the stage",
             true,
             new_symbol,
         ),
@@ -202,7 +202,7 @@ fn new_symbol(s: &mut Session, p: &Value) -> Result<Value> {
     if edit {
         crate::editing::edit(s, &json!({"symbol": id.0}))?;
     }
-    Ok(json!({"id": id.0, "name": name, "kind": kind_key(kind)}))
+    Ok(json!({"symbol": id.0, "name": name, "kind": kind_key(kind)}))
 }
 
 fn new_folder(s: &mut Session, p: &Value) -> Result<Value> {
