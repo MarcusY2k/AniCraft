@@ -68,8 +68,11 @@ oracle does, and in masks, where two such fills united as `a + b − ab`.
 
 * The hairline of #182 is gone from the stage (CPU and GPU), Test Movie and every raster export,
   for drawings made here and raw shapes opened from Animate files alike.
-* Pixels along the shared edges of merged fills change; nothing else does. No golden picture
-  in the repository had such an edge.
+* Pixels along the shared edges of merged fills change; nothing else does. One golden picture
+  had such an edge and was made anew (`crates/xfl/tests/corpus/filters`, one row of 160
+  pixels between a dark and a light fill): each pixel is now the even mix of the two fills it
+  lies half in, (96, 111, 106), where it had the white stage in it, (148, 151, 132). The other
+  31 corpus frames are within their tolerance and were left as they were.
 * Edges that are shared but flattened differently (two shapes that only happen to touch, not
   cut by the merge) add up to within the flattening tolerance, a tenth of a pixel, instead of
   exactly.
