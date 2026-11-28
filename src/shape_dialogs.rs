@@ -305,9 +305,9 @@ mod tests {
         for _ in 0..4 {
             let mut out = ctx.run_ui(egui::RawInput::default(), |ui| window(&mut app, ui.ctx()));
             out.textures_delta.clear();
+            // The last frame's tree: the window's contents arrive a frame after the window.
             if let Some(update) = out.platform_output.accesskit_update {
                 tree = Some(update);
-                break;
             }
         }
         assert_eq!(app.s.doc, before, "drawing the dialog changes nothing");

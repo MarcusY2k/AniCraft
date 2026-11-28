@@ -4,7 +4,7 @@
 use crate::a11y::Named;
 use crate::app::App;
 use crate::theme::{FORM_LABEL_DOCK, T, Type, form_row, text};
-use anicraft_engine::doc::{Document, FolderId, LibraryEntry, LibraryItem, SymbolId, SymbolKind};
+use anicraft_engine::doc::{FolderId, LibraryEntry, LibraryItem, SymbolId, SymbolKind};
 use egui::Key;
 use serde_json::json;
 

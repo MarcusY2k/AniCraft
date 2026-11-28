@@ -849,7 +849,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         app.lasso.push(p);
                     }
                 }
+                // A point a screen pixel is far more than the cut needs: the loop is thinned to
+                // what the Pencil keeps, within half a screen pixel of what was drawn.
                 let pts = std::mem::take(&mut app.lasso);
+                let pts = anicraft_engine::geom::edit::simplify(&pts, (0.5 / zoom.max(1e-3)).max(anicraft_engine::geom::planar::SNAP));
                 let points: Vec<[f32; 2]> = pts.iter().map(|p| [p.x, p.y]).collect();
                 if multi {
                     app.onion_ui.sel.clear();

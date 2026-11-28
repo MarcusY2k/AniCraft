@@ -1110,6 +1110,13 @@ impl App {
                 if matches!(id, "edit.copy" | "edit.cut" | "timeline.copy_frames" | "timeline.cut_frames" | "frames.copy" | "frames.cut") {
                     self.copied = true;
                 }
+                // Optimize Curves says what it did, as the reference app's totals message does
+                // (#510): a run that removed nothing is not left looking like a success.
+                if id == "modify.optimize"
+                    && let (Some(before), Some(after)) = (v["before"].as_u64(), v["after"].as_u64())
+                {
+                    self.status_ok(if after < before { tr!("Optimize Curves: {before} curves became {after}", before = before, after = after) } else { tr!("Optimize Curves: nothing to remove at this strength ({before} curves)", before = before) });
+                }
                 if id == "view.hide_edges" {
                     self.status_ok(if self.s.aids.hide_edges { tr!("Selection edges hidden") } else { tr!("Selection edges shown") });
                 }

@@ -213,7 +213,7 @@ pub fn window(app: &mut App, ctx: &egui::Context) {
                     }
                 });
                 ui.add_space(2.0);
-                ui.label(text(Type::Caption, tr!("Enter converts · Esc cancels")));
+                ui.label(text(Type::Caption, tr!("{enter} converts · {esc} cancels", enter = crate::platform::shortcut_label("Enter"), esc = crate::platform::shortcut_label("Esc"))));
             });
             crate::a11y::name_title_bar(&shown, title);
         }

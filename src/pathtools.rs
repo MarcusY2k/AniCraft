@@ -680,9 +680,14 @@ pub fn pull_handle(app: &mut App, target: PullTarget, anchor: Vec2, moved: &mut 
             app.run("path.convert_point", json!({"id": id.0, "cmd": cmd, "smooth": true, "handle": [h.x, h.y]}));
             None
         }
-        PullTarget::Raw => app
-            .run("raw.convert_points", json!({"points": [[anchor.x, anchor.y]], "smooth": true, "handle": [h.x, h.y], "merge": false}))
-            .map(|v| v["ids"].clone()),
+        PullTarget::Raw => {
+            let v = app.run("raw.convert_points", json!({"points": [[anchor.x, anchor.y]], "smooth": true, "handle": [h.x, h.y], "merge": false}))?;
+            // A point where three or more lines meet has no one curve to pull handles from.
+            if v["converted"].as_u64() == Some(0) {
+                app.status_ok(tr!("Handles can't be pulled out of a point where more than two lines meet."));
+            }
+            Some(v["ids"].clone())
+        }
     }
 }
 
