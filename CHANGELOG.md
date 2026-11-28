@@ -178,6 +178,12 @@
   `modify.create_object`) that turns one or more selected raw shapes on the active layer—including
   a partial marquee selection—into a drawing object in one undo step (or a group of the merged
   pieces when they have several colours or keep lines, as Union does).
+* **Subselection: Alt-drag an anchor to pull out curve handles** (#615). Holding **Alt** and
+  dragging from an anchor point pulls out mirrored Bézier handles live on both drawing objects
+  and merged drawings (**Shift** constrains to 45° steps; one undo step). An **Alt**-click
+  without dragging leaves the shape unchanged, and **Alt** on a handle still moves that handle
+  alone. Headless: optional `handle: [dx, dy]` on `path.convert_point` and `raw.convert_points`
+  (plus `merge?: bool` on `raw.convert_points`).
 * **Timeline and panel bugs from the tracker** (M8, backlog P-009 and P-010, ADR 0131).
   * **Several layers selected at once** (#512). **Ctrl**-click a layer's name to add it or take
     it out, **Shift**-click for every layer from the active one, or **Shift+Up** and

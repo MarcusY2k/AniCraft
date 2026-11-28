@@ -1503,6 +1503,55 @@ fn add_delete_and_convert_points() {
 }
 
 #[test]
+fn convert_point_with_handle_pulls_mirrored_curves_and_undoes() {
+    use anicraft_geom::edit::{ANCHOR, C1, C2};
+    let mut s = Session::default();
+    run(&mut s, "draw.rect", json!({"x": 0, "y": 0, "w": 100, "h": 80, "object": true}));
+    let id = s.selection.ids().next().unwrap().0;
+    let before = shape_path(&s, id);
+    let a0 = stage_anchor(&s, id, 0);
+    // Zero vector makes no change and adds no undo step.
+    let z = run(&mut s, "path.convert_point", json!({"id": id, "cmd": 0, "smooth": true, "handle": [0, 0]}));
+    assert_eq!(z["changed"], json!(false));
+    assert_eq!(shape_path(&s, id), before);
+    // Bad handle input is rejected.
+    for bad in [json!("nope"), json!([1]), json!([1, null]), json!([1e9, 0])] {
+        assert!(s.execute("path.convert_point", &json!({"id": id, "cmd": 0, "smooth": true, "handle": bad})).is_err(), "{bad}");
+    }
+    // Pull handles on corner 0 (also exercises the implicit closing edge of a rectangle).
+    let drag = Vec2::new(20.0, 30.0);
+    let r = run(&mut s, "path.convert_point", json!({"id": id, "cmd": 0, "smooth": true, "handle": [drag.x, drag.y]}));
+    assert_eq!(r["changed"], json!(true));
+    assert!((stage_anchor(&s, id, 0) - a0).length() < 1e-4, "the anchor did not move");
+    let el = s.visible_elements().into_iter().find(|e| e.id.0 == id).unwrap();
+    let ElementKind::Shape(sh) = &el.kind else { panic!() };
+    let (Some(i), Some(o)) = sh.path.anchor_segments(0) else { panic!("two segments at corner: {:?}", sh.path.cmds) };
+    assert!(matches!(sh.path.cmds[i], anicraft_geom::PathCmd::CubicTo(..)) && matches!(sh.path.cmds[o], anicraft_geom::PathCmd::CubicTo(..)));
+    let h_in = el.transform.apply(sh.path.point(i, C2).unwrap());
+    let h_out = el.transform.apply(sh.path.point(o, C1).unwrap());
+    let (v_in, v_out) = (h_in - a0, h_out - a0);
+    assert!(v_out.dot(drag) > 0.0 && v_in.dot(drag) < 0.0, "opposite sides along drag: {v_in:?} {v_out:?}");
+    assert!(v_out.cross(drag).abs() < 1e-3 && v_in.cross(drag).abs() < 1e-3, "collinear with drag: {v_in:?} {v_out:?}");
+    assert!((v_out.length() - drag.length()).abs() < 1e-3 && (v_in.length() - drag.length()).abs() < 1e-3);
+    // Undo restores the straight rectangle in one step.
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(shape_path(&s, id), before);
+    // Ends of an open path get one curve handle each.
+    let open = run(&mut s, "draw.path", json!({"d": "M0 0 L100 0 L100 80", "object": true}))["element"].as_u64().unwrap();
+    let start_a = stage_anchor(&s, open, 0);
+    let end_a = stage_anchor(&s, open, 2);
+    run(&mut s, "path.convert_point", json!({"id": open, "cmd": 0, "smooth": true, "handle": [15, -20]}));
+    run(&mut s, "path.convert_point", json!({"id": open, "cmd": 2, "smooth": true, "handle": [10, 25]}));
+    let el = s.visible_elements().into_iter().find(|e| e.id.0 == open).unwrap();
+    let ElementKind::Shape(sh) = &el.kind else { panic!() };
+    assert!(matches!(sh.path.cmds[1], anicraft_geom::PathCmd::CubicTo(..)) && matches!(sh.path.cmds[2], anicraft_geom::PathCmd::CubicTo(..)));
+    assert!((el.transform.apply(sh.path.point(1, C1).unwrap()) - (start_a + Vec2::new(15.0, -20.0))).length() < 1e-3);
+    assert!((el.transform.apply(sh.path.point(2, C2).unwrap()) - (end_a - Vec2::new(10.0, 25.0))).length() < 1e-3);
+    assert!((el.transform.apply(sh.path.point(0, ANCHOR).unwrap()) - start_a).length() < 1e-3);
+    assert!((el.transform.apply(sh.path.point(2, ANCHOR).unwrap()) - end_a).length() < 1e-3);
+}
+
+#[test]
 fn pencil_modes() {
     let mut s = Session::default();
     let wave: Vec<[f32; 2]> = (0..=200).map(|i| [100.0 + i as f32, 100.0 + (i as f32 * 0.05).sin() * 30.0]).collect();

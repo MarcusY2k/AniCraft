@@ -581,7 +581,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         },
                     }
                 }
-                Tool::Subselect => crate::pathtools::subselect_drag_start(app, press, shift, xf),
+                Tool::Subselect => crate::pathtools::subselect_drag_start(app, press, shift, alt, xf),
                 Tool::Bone => crate::bone_tool::drag_start(app, xf, press),
                 Tool::Bind => crate::bind_tool::drag_start(app, xf, press),
                 Tool::Warp => crate::warp_tool::drag_start(app, xf, press),
@@ -755,6 +755,17 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     crate::pathtools::move_points(app, Vec2::new(d.x, d.y), !alt);
                 }
             }
+            (Drag::PullHandle { target, anchor, moved }, Some(c)) => {
+                let (target, anchor) = (*target, *anchor);
+                let mut m = *moved;
+                let ids = crate::pathtools::pull_handle(app, target, anchor, &mut m, to_v(c), shift, xf);
+                if let Drag::PullHandle { moved, .. } = &mut app.drag {
+                    *moved = m;
+                }
+                if let Some(ids) = ids {
+                    touched(app, &ids);
+                }
+            }
             (Drag::PointMarquee { cur: m, .. } | Drag::BindMarquee { cur: m, .. }, Some(c)) => *m = c,
             (Drag::BindPaint { last }, Some(c)) => {
                 let from = *last;
@@ -794,8 +805,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 app.drop_raw();
                 app.s.end_gesture();
             }
-            Drag::Bend { .. } | Drag::RawPoint { .. } | Drag::RawHandle { .. } => end_raw_drag(app),
-            Drag::Transform { .. } | Drag::SliceGuide { .. } | Drag::Points { .. } | Drag::Hint { .. } | Drag::MotionMove { .. } | Drag::CameraPan { .. } | Drag::CameraRotate { .. } | Drag::BonePose { .. } | Drag::ArmatureMove { .. } | Drag::WarpPin { .. } => app.s.end_gesture(),
+            Drag::Bend { .. } | Drag::RawPoint { .. } | Drag::RawHandle { .. } | Drag::PullHandle { target: crate::pathtools::PullTarget::Raw, .. } => end_raw_drag(app),
+            Drag::Transform { .. } | Drag::SliceGuide { .. } | Drag::Points { .. } | Drag::PullHandle { target: crate::pathtools::PullTarget::Object { .. }, .. } | Drag::Hint { .. } | Drag::MotionMove { .. } | Drag::CameraPan { .. } | Drag::CameraRotate { .. } | Drag::BonePose { .. } | Drag::ArmatureMove { .. } | Drag::WarpPin { .. } => app.s.end_gesture(),
             Drag::Bone { from, parent, head, cur } => crate::bone_tool::drag_end(app, xf, from, parent, head, cur),
             Drag::Guide { index, .. } => crate::rulers::drag_end(app, index, geo, ui.input(|i| i.pointer.latest_pos())),
             Drag::Width { .. } => crate::widthtool::drag_end(app),
@@ -1202,7 +1213,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
         // While a background render catches up with a drag, outline where the selection is now,
         // so the artwork never seems to lag the pointer.
-        if show_edges && ready < keys.len() && !preview && matches!(app.drag, Drag::Move { .. } | Drag::SnapMove { .. } | Drag::Transform { .. } | Drag::Bend { .. } | Drag::RawPoint { .. } | Drag::RawHandle { .. }) {
+        if show_edges && ready < keys.len() && !preview && matches!(app.drag, Drag::Move { .. } | Drag::SnapMove { .. } | Drag::Transform { .. } | Drag::Bend { .. } | Drag::RawPoint { .. } | Drag::RawHandle { .. } | Drag::PullHandle { .. }) {
             let to_px = Affine::translate(origin.x, origin.y).mul(&Affine::scale(zoom, zoom));
             let dl = app.s.display_list();
             let stroke = Stroke::new(1.5, T.selection);
