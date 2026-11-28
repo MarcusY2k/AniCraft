@@ -318,8 +318,11 @@ pub fn props(app: &mut App, ui: &mut egui::Ui, row: impl Fn(&mut egui::Ui, &str,
         app.brush_lib.open = true;
         app.brush_lib.renaming = None;
         app.brush_lib.focus_save = true;
+        // One of the artist's own brushes offers its name (saving again updates it). A built-in
+        // brush's name is refused by the library, so the field starts empty for those.
+        let own = current.as_deref().and_then(|c| items.iter().find(|(_, p, key)| key.is_none() && p.name.eq_ignore_ascii_case(c))).map(|(shown, _, _)| shown.clone());
         if app.brush_lib.save_name.is_empty()
-            && let Some(name) = current_shown
+            && let Some(name) = own
         {
             app.brush_lib.save_name = name;
         }

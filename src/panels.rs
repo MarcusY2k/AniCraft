@@ -1424,14 +1424,14 @@ fn selection_props(app: &mut App, ui: &mut egui::Ui, e: &anicraft_engine::doc::E
                 mixed(ui, m.fill);
             });
             if let Some(Paint::Solid(c)) = sh.fill {
-                let mut fc = rgba(c);
-                let mut v = f32::from(fc[3]) / 255.0 * 100.0;
+                let mut v = c.sanitized().a * 100.0;
                 let pct = a11y::SliderLook { suffix: " %", max_decimals: Some(0), ..Default::default() };
                 row(ui, tr!("Fill alpha"), |ui| {
                     let tip = tr!("Fill alpha: 0 % is clear, 100 % opaque");
                     if a11y::slider(ui, &mut v, 0.0..=100.0, tr!("Fill alpha"), pct).on_hover_text(tip).changed() {
-                        fc[3] = (v.clamp(0.0, 100.0) / 100.0 * 255.0).round() as u8;
-                        live(app, tr_noop!("Fill alpha"), "element.set_fill", json!({"color": crate::colour::to_hex(fc, true)}));
+                        // Only the opacity: with several shapes selected each keeps its own
+                        // colour, and gradient and bitmap fills are not replaced.
+                        live(app, tr_noop!("Fill alpha"), "element.set_fill", json!({"alpha": (v / 100.0).clamp(0.0, 1.0)}));
                     }
                     mixed(ui, m.fill_alpha);
                 });
@@ -3326,7 +3326,7 @@ fn eraser_props(app: &mut App, ui: &mut egui::Ui) {
     ui.add_enabled_ui(!app.eraser.faucet, |ui| {
         row_prose(ui, tr!("Tip"), |ui| {
             crate::theme::checkbox(ui, &mut app.eraser.match_brush, tr!("Match Brush tip"))
-                .on_hover_text(tr!("Erase with the Brush tool's size and tip shape; changing the size with either tool changes both"));
+                .on_hover_text(tr!("Erase with the Brush tool's size, shape, angle and roundness; changing the size with either tool changes both"));
         });
         let (size, shape) = if app.eraser.match_brush { (&mut app.brush.size, &mut app.brush.shape) } else { (&mut app.eraser.size, &mut app.eraser.shape) };
         row(ui, tr!("Size"), |ui| {

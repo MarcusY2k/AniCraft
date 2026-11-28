@@ -82,7 +82,7 @@ pub fn open_for_motion_tween(app: &mut App) {
     });
 }
 
-fn kind_key(k: SymbolKind) -> &'static str {
+pub(crate) fn kind_key(k: SymbolKind) -> &'static str {
     match k {
         SymbolKind::Graphic => "graphic",
         SymbolKind::MovieClip => "movie_clip",
@@ -91,7 +91,7 @@ fn kind_key(k: SymbolKind) -> &'static str {
 }
 
 /// Where `folder` is, as the dialog names it.
-fn folder_label(doc: &Document, folder: Option<FolderId>) -> String {
+pub(crate) fn folder_label(doc: &Document, folder: Option<FolderId>) -> String {
     match folder {
         Some(f) => doc.entry_path(LibraryEntry::Folder(f)),
         None => tr!("Library (top level)").to_string(),

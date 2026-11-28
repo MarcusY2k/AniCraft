@@ -1748,7 +1748,12 @@ fn move_raw_point(app: &mut App, c: Pos2, zoom: f32) {
 fn begin_transform_move(app: &mut App, copy: bool) {
     if copy {
         app.s.begin_gesture(tr_noop!("Copy"));
-        app.run("edit.duplicate", json!({"dx": 0, "dy": 0}));
+        // A copy that could not be made (the status bar says why) leaves a plain move: the
+        // step is then named for what it does.
+        if app.run("edit.duplicate", json!({"dx": 0, "dy": 0})).is_none() {
+            app.s.end_gesture();
+            app.s.begin_gesture(tr_noop!("Free Transform"));
+        }
     } else {
         app.s.begin_gesture(tr_noop!("Free Transform"));
     }

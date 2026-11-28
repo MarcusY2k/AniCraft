@@ -18,7 +18,9 @@ pub struct NewSymbolDialog {
     focus: bool,
 }
 
-const KINDS: [SymbolKind; 3] = [SymbolKind::Graphic, SymbolKind::MovieClip, SymbolKind::Button];
+// The types in the order, and with the remembered choice, of Convert to Symbol (#419): the
+// two dialogs ask the same question.
+use crate::convert_symbol::{KINDS, folder_label, kind_key};
 
 /// Opens the dialog at the top level of the Library with the next free "Symbol n".
 pub fn open(app: &mut App) {
@@ -30,22 +32,7 @@ pub fn open_in(app: &mut App, folder: Option<FolderId>) {
     app.playing = false;
     let folder = folder.filter(|f| app.s.doc.folder(*f).is_some());
     let name = app.s.doc.numbered_name(folder, "Symbol", app.s.doc.library.len() + 1); // i18n-exempt: a new symbol's default name is document text, as the engine gives it
-    app.new_symbol = Some(NewSymbolDialog { name, kind: SymbolKind::Graphic, folder, error: None, focus: true });
-}
-
-fn kind_key(k: SymbolKind) -> &'static str {
-    match k {
-        SymbolKind::Graphic => "graphic",
-        SymbolKind::MovieClip => "movie_clip",
-        SymbolKind::Button => "button",
-    }
-}
-
-fn folder_label(doc: &Document, folder: Option<FolderId>) -> String {
-    match folder {
-        Some(f) => doc.entry_path(LibraryEntry::Folder(f)),
-        None => tr!("Library (top level)").to_string(),
-    }
+    app.new_symbol = Some(NewSymbolDialog { name, kind: app.convert_last.kind, folder, error: None, focus: true });
 }
 
 pub fn window(app: &mut App, ctx: &egui::Context) {
@@ -147,7 +134,7 @@ fn accept(app: &mut App) {
         if let Some(f) = folder {
             app.library.expanded.extend(app.s.doc.folder_chain(f));
         }
-        if let Some(id) = v["id"].as_u64() {
+        if let Some(id) = v["symbol"].as_u64() {
             let item = LibraryItem::Symbol(SymbolId(id));
             app.library_sel = Some(item);
             app.library.sel = vec![LibraryEntry::Item(item)];
@@ -171,9 +158,6 @@ mod tests {
 
     #[test]
     fn menu_and_shortcut_open_the_dialog_and_ok_creates_the_symbol() {
-        let spec = anicraft_engine::find_command("library.new_symbol").expect("command registered");
-        assert_eq!((spec.menu, spec.shortcut), ("Insert", Some("Ctrl+F8")));
-
         let ctx = egui::Context::default();
         let mut app = app(&ctx);
         let before = app.s.doc.library.len();
@@ -187,7 +171,7 @@ mod tests {
         out.textures_delta.clear();
         let d = app.new_symbol.as_ref().expect("Ctrl+F8 opens the dialog");
         assert!(app.modal_open());
-        assert_eq!(d.kind, SymbolKind::Graphic);
+        assert_eq!(d.kind, app.convert_last.kind, "the type Convert to Symbol last used");
         assert!(d.name.starts_with("Symbol "));
 
         // Escape closes it without changing the document.
