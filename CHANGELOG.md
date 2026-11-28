@@ -11,6 +11,9 @@
 * **Fill alpha in Properties** (#645): selecting a shape with a solid fill now shows a **Fill
   alpha** slider (0–100 %) directly under **Fill** in the Properties panel, keeping the fill's RGB
   colour as you drag in one undo step and showing **mixed** when selected shapes differ in opacity.
+* **Alt draws a rectangle or oval from its centre** (#637): holding Alt while dragging with the
+  Rectangle or Oval tool grows the shape symmetrically about the press point, and combines with
+  Shift for a centred square or circle.
 
 * **Flash 8 to CS4 `.fla` files open** (backlog P-039, ADR 0120, #163; by rcoenen, #478 and
   #481): the binary `.fla` of the Flash 8 to CS4 era, which AniCraft used to refuse, now opens
